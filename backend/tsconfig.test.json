@@ -1,0 +1,18 @@
+/**
+ * Typecheck-only config that ALSO covers tests/ and prisma/.
+ *
+ * tsconfig.json deliberately excludes *.test.ts — tests have no business being emitted into
+ * dist/. But that left the test suite unchecked by `npm run typecheck`, so it rotted in silence:
+ * `provenance` grew two fields and the Container grew a `dashboard`, the build stayed green, and
+ * seven suites had already stopped compiling before anyone ran jest.
+ *
+ * This config exists so that can't happen again. It emits nothing; it only checks.
+ */
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "shared/**/*.ts", "tests/**/*.ts", "prisma/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

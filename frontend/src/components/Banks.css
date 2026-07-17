@@ -1,0 +1,91 @@
+.banks {
+  background: var(--color-bg);
+  overflow: hidden;
+}
+
+.banks__header {
+  text-align: center;
+  margin-bottom: var(--space-12);
+}
+
+.banks__carousel-wrapper {
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-4) 0;
+}
+
+.banks__carousel-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 120px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.banks__carousel-fade--right {
+  right: 0;
+  background: linear-gradient(to right, transparent, var(--color-bg));
+}
+
+.banks__carousel-fade--left {
+  left: 0;
+  background: linear-gradient(to left, transparent, var(--color-bg));
+}
+
+.banks__carousel {
+  display: flex;
+  gap: var(--space-6);
+  animation: scroll-logos 30s linear infinite;
+  width: max-content;
+}
+
+.banks__logo-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--color-white);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6) var(--space-8);
+  min-width: 160px;
+  border: 1px solid var(--color-border-light);
+  transition: all var(--transition-base);
+}
+
+.banks__logo-card:hover {
+  border-color: var(--color-accent-lighter);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+}
+
+.banks__logo-abbr {
+  width: 56px;
+  height: 56px;
+  background: var(--gradient-primary);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-white);
+  font-weight: 800;
+  font-size: var(--font-size-sm);
+}
+
+.banks__logo-name {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .banks__logo-card {
+    min-width: 130px;
+    padding: var(--space-4) var(--space-6);
+  }
+
+  .banks__carousel-fade {
+    width: 60px;
+  }
+}

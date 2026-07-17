@@ -1,0 +1,55 @@
+.site-loader {
+  background-color: var(--color-black);
+  color: var(--color-cream);
+  height: 100%;
+  left: 0;
+  position: fixed;
+  top: 0;
+  width: 100%;
+  z-index: 10200;
+  transition: opacity 0.8s ease-in-out, transform 0.8s ease-in-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.site-loader.is-loaded {
+  opacity: 0;
+  transform: translateY(-10%);
+  pointer-events: none;
+}
+
+.site-loader__heading-inner {
+  display: flex;
+  font-family: var(--font-family-serif);
+  font-size: 5rem;
+  font-weight: 300;
+  gap: 0.5rem;
+}
+
+.site-loader__svg {
+  animation: fadeInOut 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px hsla(0,0%,65%,.35));
+}
+
+.site-loader__progress {
+  background-color: var(--color-peach);
+  bottom: 0;
+  height: 6px;
+  left: 0;
+  position: absolute;
+  width: 100%;
+  animation: progressFill 2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  transform-origin: right;
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateY(10px); }
+  50% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+
+@keyframes progressFill {
+  0% { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}

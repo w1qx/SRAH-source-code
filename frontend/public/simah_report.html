@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سراة | تقرير سمة الائتماني الموحد</title>
+    <!-- Google Fonts: Cairo -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00897B;
+            --primary-dark: #004D40;
+            --primary-light: #E0F2F1;
+            --dark: #1E1A16;
+            --bg-cream: #FAF8F5;
+            --border-color: #DDD3C9;
+            --text-secondary: #706860;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Cairo', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-cream);
+            color: var(--dark);
+            direction: rtl;
+            padding-bottom: 60px;
+        }
+
+        /* Top interactive bar (hidden during print) */
+        .interactive-bar {
+            background-color: var(--dark);
+            color: #fff;
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        .bar-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .print-btn {
+            background-color: var(--primary);
+            color: #fff;
+            border: none;
+            padding: 8px 20px;
+            font-size: 13px;
+            font-weight: 700;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .print-btn:hover {
+            background-color: var(--primary-dark);
+            transform: scale(1.02);
+        }
+
+        /* Document Container */
+        .document {
+            max-width: 800px;
+            margin: 40px auto;
+            background: #fff;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.03);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Watermark */
+        .watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-30deg);
+            font-size: 120px;
+            font-weight: 800;
+            color: rgba(0, 137, 123, 0.03);
+            pointer-events: none;
+            user-select: none;
+            z-index: 0;
+        }
+
+        .doc-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header Styles */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--primary-light);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .header-logo-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .srah-logo {
+            height: 45px;
+            width: auto;
+        }
+
+        .header-title {
+            text-align: left;
+        }
+
+        .header-title h1 {
+            color: var(--primary-dark);
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+
+        .header-title p {
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 600;
+            margin-top: 2px;
+        }
+
+        /* Section layout */
+        .section-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--primary-dark);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-right: 3px solid var(--primary);
+            padding-right: 8px;
+        }
+
+        .grid-info {
+            display: grid;
+            grid-template-cols: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 30px;
+            background-color: var(--bg-cream);
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .info-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .info-value {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--dark);
+        }
+
+        /* Score Gauge Section */
+        .score-box {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%);
+            color: #fff;
+            padding: 20px 24px;
+            border-radius: 16px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 15px rgba(0, 137, 123, 0.15);
+        }
+
+        .score-info h2 {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .score-info p {
+            font-size: 12px;
+            opacity: 0.85;
+        }
+
+        .score-value {
+            text-align: center;
+        }
+
+        .score-num {
+            font-size: 32px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .score-badge {
+            background-color: rgba(255, 255, 255, 0.2);
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            margin-top: 4px;
+            display: inline-block;
+        }
+
+        /* Tables */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+            font-size: 13px;
+        }
+
+        .data-table th {
+            background-color: var(--bg-cream);
+            color: var(--dark);
+            font-weight: 700;
+            text-align: right;
+            padding: 10px 12px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .data-table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--dark);
+        }
+
+        .data-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .total-row {
+            font-weight: 700;
+            background-color: var(--primary-light);
+        }
+
+        .total-row td {
+            color: var(--primary-dark) !important;
+        }
+
+        /* Disclaimer Footer */
+        .footer {
+            margin-top: 40px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .disclaimer {
+            font-size: 10px;
+            color: var(--text-secondary);
+            max-width: 70%;
+            line-height: 1.5;
+        }
+
+        .seals-container {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .seal-logo {
+            height: 30px;
+            width: auto;
+            opacity: 0.7;
+        }
+
+        /* Print styles */
+        @media print {
+            body {
+                background-color: #fff;
+                padding-bottom: 0;
+            }
+
+            .interactive-bar {
+                display: none;
+            }
+
+            .document {
+                margin: 0;
+                padding: 0;
+                border: none;
+                box-shadow: none;
+                width: 100%;
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top interactive bar (hidden during print) -->
+    <div class="interactive-bar">
+        <div class="bar-title">سراة | نموذج محاكاة تقرير سمة الائتماني (PDF) الجاهز للاستيراد</div>
+        <button class="print-btn" onclick="window.print()">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="transform: scaleX(-1);">
+                <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z"/>
+                <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2H5zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1z"/>
+            </svg>
+            طباعة وحفظ كـ PDF
+        </button>
+    </div>
+
+    <!-- Main document -->
+    <div class="document">
+        <div class="watermark">سراة</div>
+        <div class="doc-content">
+            
+            <!-- Header -->
+            <div class="header">
+                <div class="header-logo-container">
+                    <img src="/logo_srah.png" alt="سراة" class="srah-logo">
+                </div>
+                <div class="header-title">
+                    <h1>تقرير المعلومات الائتمانية الموحد</h1>
+                    <p>صادر عن الشركة السعودية للمعلومات الائتمانية (سمة)</p>
+                </div>
+            </div>
+
+            <!-- Client Info -->
+            <div class="section-title">بيانات العميل الأساسية</div>
+            <div class="grid-info">
+                <div class="info-item">
+                    <span class="info-label">اسم العميل الثلاثي</span>
+                    <span class="info-value">عبدالرحمن بن محمد الشمري</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">رقم الهوية الوطنية / الإقامة</span>
+                    <span class="info-value">1098765432</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">تاريخ إصدار التقرير</span>
+                    <span class="info-value">17-07-2026</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">حالة التقرير</span>
+                    <span class="info-value" style="color: var(--primary);">مكتمل ونشط</span>
+                </div>
+            </div>
+
+            <!-- Score Gauge -->
+            <div class="score-box">
+                <div class="score-info">
+                    <h2>التقييم الائتماني للعميل (SIMAH Score)</h2>
+                    <p>يعكس التقييم مدى ملاءة العميل الائتمانية ومستوى المخاطر.</p>
+                </div>
+                <div class="score-value">
+                    <div class="score-num">785</div>
+                    <div class="score-badge">ممتاز جداً</div>
+                </div>
+            </div>
+
+            <!-- Income Section -->
+            <div class="section-title">بيانات الدخل الشهري المفصح عنها</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>جهة العمل</th>
+                        <th>الراتب الأساسي</th>
+                        <th>البدلات والميزات</th>
+                        <th>إجمالي الدخل الشهري</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>شركة علم للمعلومات (قطاع شبه حكومي)</td>
+                        <td>15,000 ر.س</td>
+                        <td>3,500 ر.س</td>
+                        <td style="font-weight: 700;">18,500 ر.س</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <!-- Liabilities Section -->
+            <div class="section-title">تفاصيل الالتزامات والتمويلات القائمة</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>الجهة التمويلية</th>
+                        <th>نوع التمويل</th>
+                        <th>مبلغ التمويل الأصلي</th>
+                        <th>القسط الشهري</th>
+                        <th>الرصيد المتبقي</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>مصرف الراجحي</td>
+                        <td>تمويل شخصي قائم</td>
+                        <td>120,000 ر.س</td>
+                        <td>2,500 ر.س</td>
+                        <td>85,000 ر.س</td>
+                    </tr>
+                    <tr>
+                        <td>البنك الأهلي السعودي (SNB)</td>
+                        <td>بطاقة ائتمانية</td>
+                        <td>10,000 ر.س</td>
+                        <td>500 ر.س</td>
+                        <td>1,200 ر.س</td>
+                    </tr>
+                    <tr>
+                        <td>مصرف الإنماء</td>
+                        <td>تمويل تأجيري للسيارات</td>
+                        <td>80,000 ر.س</td>
+                        <td>1,200 ر.س</td>
+                        <td>45,000 ر.س</td>
+                    </tr>
+                    <tr class="total-row">
+                        <td colspan="3">إجمالي الالتزامات الشهرية القائمة</td>
+                        <td>4,200 ر.س</td>
+                        <td>131,200 ر.س</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <!-- Footnotes & Seals -->
+            <div class="footer">
+                <div class="disclaimer">
+                    تم إصدار هذا التقرير لأغراض المحاكاة والتأهيل الائتماني عبر منصة سراة الاستشارية. المعلومات الواردة مطابقة للقواعد والأنظمة المعتمدة من البنك المركزي السعودي (ساما) وتخضع لمعايير السرية التامة وحماية البيانات الخاصة بالعميل.
+                </div>
+                <div class="seals-container">
+                    <img src="/sama.svg" alt="ساما" class="seal-logo">
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+</body>
+</html>

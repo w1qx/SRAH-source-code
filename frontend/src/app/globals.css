@@ -1,0 +1,255 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme inline {
+  --color-navy: #082F3E;
+  --color-orange: #B05B37;
+  --color-orange-hover: #96492A;
+  --color-purple: #8B82D8;
+  --color-purple-light: #EFEDF9;
+  --color-warm-bg: #F7F5F2;
+  --color-surface: #FFFFFF;
+  --color-text-primary: #132D38;
+  --color-text-secondary: #64757C;
+  --color-border: #E3E7E6;
+
+  /* Risk/status ramp: brand triad — teal (navy family) → copper → plum.
+     No green/yellow/red. Every hex validated on white: AA text contrast,
+     chroma floor, and adjacent CVD separation. Tritan separation between
+     copper and plum sits at ΔE 11.5, so status must never be color alone —
+     StatusBadge and the application chips always ship an icon + label. */
+  --color-safe: #0F6E9B;
+  --color-safe-bg: #E7F1F7;
+  --color-caution: #8F4A2A;
+  --color-caution-bg: #F7ECE5;
+  --color-danger: #7B3358;
+  --color-danger-bg: #F5E9EF;
+  --font-sans: 'IBM Plex Sans Arabic', sans-serif;
+  --color-cream: #F5EFEB;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  background-color: #faf8f5 !important;
+}
+
+body {
+  font-family: 'IBM Plex Sans Arabic', sans-serif;
+  color: #132D38;
+  direction: rtl;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #E3E7E6;
+  border-radius: 3px;
+}
+
+.timeline-scroll {
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.timeline-scroll > * {
+  scroll-snap-align: center;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out both;
+}
+.anim-delay-1 { animation-delay: 70ms; }
+.anim-delay-2 { animation-delay: 140ms; }
+.anim-delay-3 { animation-delay: 210ms; }
+
+@keyframes slideInStart {
+  from { opacity: 0.4; transform: translateX(-100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in-start {
+  animation: slideInStart 0.3s ease-out both;
+}
+
+@keyframes pulseGentle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.animate-pulse-gentle {
+  animation: pulseGentle 2s ease-in-out infinite;
+}
+
+/* --- Searching screen: transform/opacity only, so it stays on the compositor --- */
+
+/* Gold arc sweeping around the seal — the "work is running" signal. */
+@keyframes orbitSpin {
+  to { transform: rotate(360deg); }
+}
+.animate-orbit {
+  animation: orbitSpin 2.4s linear infinite;
+  transform-origin: center;
+}
+
+/* Concentric rings breathing outward from the seal. */
+@keyframes ringPulse {
+  0% { transform: scale(0.86); opacity: 0.55; }
+  70% { transform: scale(1.18); opacity: 0; }
+  100% { transform: scale(1.18); opacity: 0; }
+}
+.animate-ring {
+  animation: ringPulse 2.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  transform-origin: center;
+}
+
+/* Step rows enter from below (deeper in the flow), staggered by index. */
+@keyframes stepIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-step-in {
+  animation: stepIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* --- سراة's greeting flash: the seal settles, the lines rise into focus, the stage lifts away.
+   Everything is opacity/transform/filter only, so it stays off the layout path. Note there is no
+   letter-spacing in the text keyframes: animating it pulls Arabic letters out of their joins. --- */
+
+/* The seal lands first — from slightly small and soft, into place. */
+@keyframes flashSealIn {
+  from { opacity: 0; transform: scale(0.82); filter: blur(4px); }
+  to { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+.flash-seal {
+  animation: flashSealIn 0.85s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* The greeting itself is revealed word by word. Words, never letters: splitting Arabic into
+   per-letter spans breaks the cursive joins and the word falls apart. */
+@keyframes flashWordIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.92); filter: blur(10px); }
+  55% { filter: blur(0); }
+  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+.flash-word {
+  display: inline-block;
+  animation: flashWordIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Each line rises and sharpens, as if coming into focus. */
+@keyframes flashLineIn {
+  from { opacity: 0; transform: translateY(16px); filter: blur(8px); }
+  60% { filter: blur(0); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+.flash-line {
+  animation: flashLineIn 0.95s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+/* The lines follow the greeting's last word (which lands at ~440ms + 800ms). */
+.flash-delay-2 { animation-delay: 620ms; }
+.flash-delay-3 { animation-delay: 780ms; }
+
+/* Exit: the whole stage lifts and softens away — a dissolve, not a cut. */
+.flash-stage {
+  transition:
+    opacity 620ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 620ms cubic-bezier(0.4, 0, 0.2, 1),
+    filter 620ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.flash-stage--out {
+  opacity: 0;
+  transform: translateY(-14px) scale(0.97);
+  filter: blur(6px);
+}
+
+/* --- The chat arrives as the greeting lifts away: the card rises into the space it left, then
+   its two panels settle, then the bubbles land. Transform/opacity only — no blur on the card:
+   it's a large subtree wrapping the animated grid, and blurring it would force a repaint per
+   frame. --- */
+@keyframes chatCardIn {
+  from { opacity: 0; transform: translateY(28px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-chat-in {
+  animation: chatCardIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes chatPanelIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-chat-panel {
+  animation: chatPanelIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.chat-panel-delay-1 { animation-delay: 140ms; }
+.chat-panel-delay-2 { animation-delay: 240ms; }
+
+/* Every message — the first question included — lands rather than blinking into place. */
+@keyframes bubbleIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-bubble-in {
+  animation: bubbleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+/* The opening question waits for the panel it sits in; later messages land as they arrive. */
+.bubble-delay-first { animation-delay: 380ms; }
+
+/* The chat's backdrop (grid + glows) — referenced by the conversation shell, which had no
+   `fadeIn` to run: it was cutting in behind the card. */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fadeIn 0.6s ease-out both;
+}
+
+/* Modal enters from its trigger: scale + fade, not a hard cut. */
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-modal-in {
+  animation: modalIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up,
+  .animate-slide-in-start,
+  .animate-pulse-gentle,
+  .animate-orbit,
+  .animate-ring,
+  .animate-step-in,
+  .animate-modal-in,
+  .flash-seal,
+  .flash-line,
+  .flash-word,
+  .animate-chat-in,
+  .animate-chat-panel,
+  .animate-bubble-in,
+  .animate-fade-in {
+    animation: none;
+  }
+  /* The flash still has to leave — it just does so plainly. */
+  .flash-stage {
+    transition: opacity 200ms linear;
+  }
+  .flash-stage--out {
+    transform: none;
+    filter: none;
+  }
+  /* Rings would otherwise sit frozen mid-pulse over the seal. */
+  .animate-ring {
+    opacity: 0;
+  }
+}

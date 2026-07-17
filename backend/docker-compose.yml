@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: suraa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: suraa
+      POSTGRES_PASSWORD: suraa
+      POSTGRES_DB: suraa
+    ports:
+      - '5432:5432'
+    volumes:
+      - suraa-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U suraa -d suraa']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  suraa-pgdata:

@@ -1,0 +1,240 @@
+// Suraa — PostgreSQL schema (Scope v2, Section 11).
+//
+// Design principles enforced here:
+//  1. `analyses` stores its own provenance (rule version, inflation value/source/date,
+//     assumptions) so every result stays reproducible even after SAMA rules or the
+//     GASTAT CPI change.
+//  2. `economic_data_cache` decouples the product from GASTAT uptime.
+//  3. `result_json` (jsonb) + normalized `analysis_years` = full audit record AND
+//     a queryable history.
+//  4. Erasure by design (PDPL): everything user-linked cascades from `users`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AuthProviderKind {
+  email_otp
+  nafath
+
+  @@map("auth_provider_kind")
+}
+
+enum OtpPurpose {
+  login
+
+  @@map("otp_purpose")
+}
+
+enum FinancialInputSource {
+  chatbot
+  form
+
+  @@map("financial_input_source")
+}
+
+enum EconomicIndicatorKind {
+  cpi
+
+  @@map("economic_indicator_kind")
+}
+
+enum RiskTierKind {
+  safe
+  caution
+  high
+
+  @@map("risk_tier_kind")
+}
+
+model User {
+  id              String           @id @default(uuid()) @db.Uuid
+  email           String           @unique
+  emailVerifiedAt DateTime?        @map("email_verified_at")
+  authProvider    AuthProviderKind @default(email_otp) @map("auth_provider")
+  nafathId        String?          @unique @map("nafath_id")
+  pdplConsentAt   DateTime?        @map("pdpl_consent_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  otpCodes        OtpCode[]
+  sessions        Session[]
+  financialInputs FinancialInput[]
+  analyses        Analysis[]
+  chatSessions    ChatSession[]
+
+  @@map("users")
+}
+
+model OtpCode {
+  id         String     @id @default(uuid()) @db.Uuid
+  userId     String     @map("user_id") @db.Uuid
+  codeHash   String     @map("code_hash")
+  purpose    OtpPurpose @default(login)
+  expiresAt  DateTime   @map("expires_at")
+  consumedAt DateTime?  @map("consumed_at")
+  attempts   Int        @default(0)
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, consumedAt])
+  @@index([expiresAt])
+  @@map("otp_codes")
+}
+
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  userAgent        String?   @map("user_agent")
+  ip               String?
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@map("sessions")
+}
+
+/// The UserFinancialData contract, persisted. Money columns are Decimal(12,2):
+/// never float — this is a regulated financial record.
+model FinancialInput {
+  id                  String               @id @default(uuid()) @db.Uuid
+  userId              String               @map("user_id") @db.Uuid
+  goal                String
+  financingAmount     Decimal              @map("financing_amount") @db.Decimal(12, 2)
+  termYears           Int                  @map("term_years")
+  grossSalary         Decimal              @map("gross_salary") @db.Decimal(12, 2)
+  additionalIncome    Decimal              @default(0) @map("additional_income") @db.Decimal(12, 2)
+  existingCommitments Decimal              @default(0) @map("existing_commitments") @db.Decimal(12, 2)
+  monthlyExpenses     Decimal              @map("monthly_expenses") @db.Decimal(12, 2)
+  familyStatus        String               @map("family_status")
+  savings             Decimal              @default(0) @db.Decimal(12, 2)
+  employmentSector    String               @map("employment_sector")
+  tenureYears         Int                  @map("tenure_years")
+  source              FinancialInputSource @default(chatbot)
+  createdAt           DateTime             @default(now()) @map("created_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analyses     Analysis[]
+  chatSessions ChatSession[]
+
+  @@index([userId, createdAt])
+  @@map("financial_inputs")
+}
+
+/// One row per SAMA analysis run. This is the most important table in a regulated
+/// product: it carries everything needed to reproduce the result years later.
+model Analysis {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  financialInputId String   @map("financial_input_id") @db.Uuid
+
+  /// e.g. "SAMA-2018-05" — the rule set that was in force for THIS analysis.
+  ruleVersion String @map("rule_version")
+
+  /// GASTAT provenance: the exact CPI figure, where it came from, and for which period.
+  inflationValue  Decimal @map("inflation_value") @db.Decimal(6, 4)
+  inflationSource String  @map("inflation_source")
+  inflationAsOf   String  @map("inflation_as_of")
+
+  salaryGrowthAssumption Decimal @map("salary_growth_assumption") @db.Decimal(6, 4)
+  /// Indicative APR used to amortize the requested financing (an assumption, not a bank quote).
+  aprAssumption          Decimal @map("apr_assumption") @db.Decimal(6, 4)
+
+  /// Data-source provenance: which source supplied each user figure the engine consumed.
+  /// "manual" (chatbot) or "simah" (bureau-verified). Normalized here so history is queryable
+  /// without cracking open result_json; the full record still lives in result_json too.
+  commitmentsSource String  @default("manual") @map("commitments_source")
+  salarySource      String  @default("manual") @map("salary_source")
+  /// SIMAH report reference + score placeholder, present only when SIMAH supplied the figures.
+  simahReferenceId  String? @map("simah_reference_id")
+  creditScore       Int?    @map("credit_score")
+
+  requestedDbr Decimal      @map("requested_dbr") @db.Decimal(6, 4)
+  overallRisk  RiskTierKind @map("overall_risk")
+
+  /// The full, self-describing AnalysisResult exactly as returned to the client.
+  resultJson Json     @map("result_json")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  financialInput FinancialInput @relation(fields: [financialInputId], references: [id], onDelete: Cascade)
+  years          AnalysisYear[]
+
+  @@index([userId, createdAt])
+  @@map("analyses")
+}
+
+/// Normalized per-year breakdown — makes history and analytics queryable without
+/// cracking open result_json.
+model AnalysisYear {
+  id               String       @id @default(uuid()) @db.Uuid
+  analysisId       String       @map("analysis_id") @db.Uuid
+  scenario         String
+  year             Int
+  installment      Decimal      @db.Decimal(12, 2)
+  remainingMonthly Decimal      @map("remaining_monthly") @db.Decimal(12, 2)
+  remainingDebt    Decimal      @map("remaining_debt") @db.Decimal(12, 2)
+  dbr              Decimal      @db.Decimal(6, 4)
+  riskTier         RiskTierKind @map("risk_tier")
+
+  analysis Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@unique([analysisId, scenario, year])
+  @@index([analysisId])
+  @@map("analysis_years")
+}
+
+model ChatSession {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  /// Full transcript (ChatMessage[]) — the audit trail of what the user was asked.
+  transcriptJson   Json     @default("[]") @map("transcript_json")
+  /// Partial<UserFinancialData> accumulated so far; Zod-validated before it lands here.
+  extractedJson    Json     @default("{}") @map("extracted_json")
+  complete         Boolean  @default(false)
+  extractedInputId String?  @map("extracted_input_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  extractedInput FinancialInput? @relation(fields: [extractedInputId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("chat_sessions")
+}
+
+model FeatureFlag {
+  key         String   @id
+  enabled     Boolean  @default(false)
+  description String
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("feature_flags")
+}
+
+/// GASTAT CPI, ingested monthly. Analyses read the cache, so GASTAT downtime never
+/// blocks a user.
+model EconomicDataCache {
+  id        String                @id @default(uuid()) @db.Uuid
+  indicator EconomicIndicatorKind
+  /// Annual rate as a fraction, e.g. 0.0200 for 2.0%.
+  value     Decimal               @db.Decimal(6, 4)
+  /// Reporting period, e.g. "2026-05".
+  period    String
+  source    String
+  fetchedAt DateTime              @default(now()) @map("fetched_at")
+
+  @@unique([indicator, period])
+  @@index([indicator, period(sort: Desc)])
+  @@map("economic_data_cache")
+}

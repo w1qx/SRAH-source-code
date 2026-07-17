@@ -1,0 +1,619 @@
+/**
+ * سراة AI Orb — brand palette (#8980bc lavender, #f6e7dc cream, #c36b4e terracotta).
+ * A collapsed pull-strip tab ("المساعد الصوتي") tucked behind the chat card that expands into a
+ * blurred, full-space orb.
+ */
+
+:root {
+  --orb-purple: #8980bc;
+  --orb-cream: #f6e7dc;
+  --orb-terracotta: #c36b4e;
+  --orb-ink: #241f2b;
+}
+
+/* ---- Collapsed launcher: a pull-strip tab tucked BEHIND the chat card ----
+   Docked to the chat card's left edge (card: w-92%, max-w 1100px, centered) and layered under
+   it, so it reads as a tab sticking out from behind the chat. Hovering "drags" it further out
+   with a quick spring (the overshoot bezier does the snap); click opens the full orb. */
+.orb-strip {
+  position: fixed;
+  top: 50%;
+  /* The chat card's left edge. */
+  left: max(4vw, calc(50vw - 550px));
+  /* Tucked like a paper in a folder: the sheet's tail sits under the card while the logo,
+     title and chevron peek fully out. */
+  transform: translateY(-50%) translateX(calc(-100% + 22px));
+  /* Under the chat card (z-10) but above the page backdrop (z-0). */
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 62px;
+  /* The wide right padding is the tail that stays under the card; the left padding keeps
+     the content clear of the grip groove. */
+  padding: 18px 24px 14px 12px;
+  border: none;
+  border-radius: 22px 0 0 22px;
+  cursor: pointer;
+  background: linear-gradient(
+    205deg,
+    rgba(255, 255, 255, 0.95),
+    rgba(137, 128, 188, 0.5) 45%,
+    rgba(195, 107, 78, 0.26) 80%,
+    rgba(137, 128, 188, 0.5)
+  );
+  box-shadow:
+    -12px 14px 30px -12px rgba(137, 128, 188, 0.6),
+    inset -10px 0 20px rgba(195, 107, 78, 0.14),
+    inset 10px 0 20px rgba(255, 255, 255, 0.7),
+    inset 0 0 16px rgba(137, 128, 188, 0.26);
+  transition:
+    transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.24s ease;
+}
+/* Hover / keyboard focus: the strip snaps out from under the card — the "pull". */
+.orb-strip:hover,
+.orb-strip:focus-visible {
+  transform: translateY(-50%) translateX(calc(-100% + 6px));
+  box-shadow:
+    -16px 18px 40px -12px rgba(137, 128, 188, 0.78),
+    inset -10px 0 20px rgba(195, 107, 78, 0.18),
+    inset 10px 0 20px rgba(255, 255, 255, 0.8),
+    inset 0 0 18px rgba(137, 128, 188, 0.34);
+}
+.orb-strip:active {
+  transform: translateY(-50%) translateX(calc(-100% + 4px)) scale(0.98);
+}
+.orb-strip:focus-visible {
+  outline: 2px solid rgba(137, 128, 188, 0.7);
+  outline-offset: 3px;
+}
+/* Gloss sheen along the visible part of the strip. */
+.orb-strip::before {
+  content: "";
+  position: absolute;
+  inset: 6% 30% 6% 10%;
+  border-radius: 16px 0 0 16px;
+  pointer-events: none;
+  background: linear-gradient(200deg, rgba(255, 255, 255, 0.75), transparent 55%);
+}
+/* Shading where the sheet slides under the card — sells the "paper in a folder" depth. */
+.orb-strip::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 30px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, rgba(72, 60, 104, 0.2));
+}
+.orb-strip__mark {
+  position: relative;
+  z-index: 1;
+  width: 26px;
+  height: auto;
+  flex-shrink: 0;
+  color: rgba(72, 60, 104, 0.82);
+  filter:
+    drop-shadow(-1px -1px 1.5px rgba(255, 255, 255, 0.85))
+    drop-shadow(1px 1px 1.5px rgba(137, 128, 188, 0.5));
+}
+/* The title runs down the strip. */
+.orb-strip__title {
+  position: relative;
+  z-index: 1;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: rgba(72, 60, 104, 0.88);
+  text-shadow: 0 1px 1.5px rgba(255, 255, 255, 0.8);
+}
+/* Chevron pointing out from under the card — nudges sideways to say "pull me". */
+.orb-strip__chevron {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  color: rgba(72, 60, 104, 0.65);
+  animation: orbStripNudge 1.8s ease-in-out infinite;
+}
+.orb-strip:hover .orb-strip__chevron {
+  animation: none;
+  transform: translateX(-2px);
+}
+@keyframes orbStripNudge {
+  0%,
+  100% {
+    transform: translateX(0);
+    opacity: 0.65;
+  }
+  50% {
+    transform: translateX(-4px);
+    opacity: 1;
+  }
+}
+/* Handle groove hugging the outer (left) edge, clear of the title text. */
+.orb-strip__grip {
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 40px;
+  border-radius: 999px;
+  background: rgba(72, 60, 104, 0.28);
+  box-shadow:
+    inset 0 1px 2px rgba(137, 128, 188, 0.5),
+    -1px 0 1px rgba(255, 255, 255, 0.75);
+  pointer-events: none;
+}
+
+/* On small screens there is no room beside the card, so the strip docks to the screen's
+   left edge instead (above the card), fully visible — a tap opens it directly. */
+@media (max-width: 900px) {
+  .orb-strip {
+    left: 0;
+    top: auto;
+    bottom: 88px;
+    z-index: 1200;
+    transform: none;
+    width: 48px;
+    gap: 10px;
+    padding: 14px 6px 12px;
+    border-radius: 0 18px 18px 0;
+    box-shadow:
+      12px 14px 30px -12px rgba(137, 128, 188, 0.6),
+      inset 10px 0 20px rgba(195, 107, 78, 0.14),
+      inset -10px 0 20px rgba(255, 255, 255, 0.7),
+      inset 0 0 16px rgba(137, 128, 188, 0.26);
+  }
+  .orb-strip::before {
+    inset: 6% 10% 6% 12%;
+    border-radius: 0 14px 14px 0;
+  }
+  /* Nothing to slide under at the screen edge — no folder shading. */
+  .orb-strip::after {
+    display: none;
+  }
+  .orb-strip:hover,
+  .orb-strip:focus-visible {
+    transform: translateX(4px);
+  }
+  .orb-strip:active {
+    transform: translateX(2px) scale(0.98);
+  }
+  .orb-strip__grip {
+    left: auto;
+    right: 4px;
+  }
+  /* Flip the chevron so it points out of the screen edge (rightwards). */
+  .orb-strip__chevron {
+    animation-name: orbStripNudgeFlip;
+  }
+  .orb-strip:hover .orb-strip__chevron {
+    transform: scaleX(-1) translateX(-2px);
+  }
+  .orb-strip__mark {
+    width: 24px;
+  }
+  .orb-strip__title {
+    font-size: 0.74rem;
+  }
+}
+@keyframes orbStripNudgeFlip {
+  0%,
+  100% {
+    transform: scaleX(-1) translateX(0);
+    opacity: 0.65;
+  }
+  50% {
+    transform: scaleX(-1) translateX(-4px);
+    opacity: 1;
+  }
+}
+
+/* ---- Expanded overlay: blur the chat, orb takes over ---- */
+.orb-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: orbFade 0.28s ease-out both;
+}
+@keyframes orbFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* Exit — fade the whole overlay out before it unmounts. */
+.orb-overlay--closing {
+  animation: orbFadeOut 0.3s ease-in both;
+}
+@keyframes orbFadeOut {
+  to {
+    opacity: 0;
+  }
+}
+/* The blur that falls on the chat behind, tinted with soft brand-colour glows. */
+.orb-overlay__scrim {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background:
+    radial-gradient(58% 58% at 30% 28%, rgba(137, 128, 188, 0.22), transparent 62%),
+    radial-gradient(52% 52% at 74% 72%, rgba(195, 107, 78, 0.16), transparent 58%),
+    rgba(24, 17, 33, 0.32);
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+}
+/* Fine grain texture over the blur, so the background reads as a surface, not flat. */
+.orb-overlay__scrim::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
+/* No box — the orb floats free on the textured, blurred background. */
+.orb-expanded {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: orbRise 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes orbRise {
+  from {
+    opacity: 0;
+    transform: translateY(22px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+/* Exit — sink and fade before unmount. */
+.orb-expanded--closing {
+  animation: orbSink 0.3s ease-in both;
+}
+@keyframes orbSink {
+  to {
+    opacity: 0;
+    transform: translateY(16px) scale(0.95);
+  }
+}
+
+.orb-close {
+  position: fixed;
+  top: 22px;
+  right: 22px;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  cursor: pointer;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(36, 31, 43, 0.45);
+  backdrop-filter: blur(6px);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.orb-close:hover {
+  background: var(--orb-terracotta);
+  color: #fff;
+  border-color: var(--orb-terracotta);
+}
+
+/* ---- Orb viewport: square, centered in the chat-sized panel ---- */
+.orb-stage {
+  position: relative;
+  width: min(52vh, 78vw, 480px);
+  aspect-ratio: 1 / 1;
+}
+
+/* ---- The pearl orb (pure CSS) ---- */
+.orb2 {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* The glossy sphere: radial gradient (white → lavender → peach → lavender) with layered inset
+   shadows for the pearl depth. Breathes with a slow pulse. */
+.orb2__ball {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 35%,
+    rgba(255, 255, 255, 0.95),
+    rgba(137, 128, 188, 0.5) 35%,
+    rgba(195, 107, 78, 0.25) 65%,
+    rgba(137, 128, 188, 0.5)
+  );
+  box-shadow:
+    0 0 70px rgba(137, 128, 188, 0.5),
+    inset 0 -32px 62px rgba(195, 107, 78, 0.16),
+    inset 0 32px 62px rgba(255, 255, 255, 0.7),
+    inset 0 0 44px rgba(137, 128, 188, 0.25);
+  animation: orb2Pulse 3s ease-in-out infinite;
+}
+/* Top glossy highlight. */
+.orb2__ball::before {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 30% 30%, rgba(255, 255, 255, 0.8) 0%, transparent 50%);
+}
+/* Slow conic sheen rotating under the logo. */
+.orb2__ball::after {
+  content: "";
+  position: absolute;
+  inset: 5%;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 180deg,
+    transparent,
+    rgba(137, 128, 188, 0.3),
+    transparent,
+    rgba(195, 107, 78, 0.2),
+    transparent
+  );
+  animation: orb2Rotate 6s linear infinite;
+}
+
+/* Expanding ripple rings — shown only while active. */
+.orb2__ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(137, 128, 188, 0.3);
+  opacity: 0;
+  pointer-events: none;
+  animation: orb2Ripple 2s ease-out infinite;
+}
+.orb2__ripple:nth-child(2) {
+  animation-delay: 0.6s;
+}
+.orb2__ripple:nth-child(3) {
+  animation-delay: 1.2s;
+}
+.orb2--on .orb2__ripple {
+  opacity: 1;
+}
+
+/* Soft halo — shown while listening. */
+.orb2__halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(137, 128, 188, 0.4), transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+  animation: orb2Halo 1.5s ease-out infinite;
+}
+.orb2--listening .orb2__halo {
+  opacity: 1;
+}
+
+/* The سراة logo set into the pearl surface — a light, embossed silvery mark. */
+.orb2__recess {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.orb2__logo {
+  width: 46%;
+  height: auto;
+  color: rgba(90, 78, 120, 0.72);
+  filter:
+    drop-shadow(-1px -1px 2px rgba(255, 255, 255, 0.85))
+    drop-shadow(1px 1px 2px rgba(137, 128, 188, 0.55))
+    drop-shadow(0 2px 7px rgba(195, 107, 78, 0.25))
+    brightness(1.08) contrast(1.12);
+}
+
+/* --- State variations --- */
+.orb2--listening .orb2__ball,
+.orb2--talking .orb2__ball {
+  animation: orb2PulseStrong 1.5s ease-in-out infinite;
+  box-shadow:
+    0 0 100px rgba(137, 128, 188, 0.8),
+    inset 0 -32px 62px rgba(195, 107, 78, 0.2),
+    inset 0 32px 62px rgba(255, 255, 255, 0.85),
+    inset 0 0 46px rgba(137, 128, 188, 0.4);
+}
+.orb2--talking .orb2__ball {
+  animation-duration: 1.05s;
+}
+/* Listening lifts the orb slightly. */
+.orb2--listening {
+  animation: orb2FloatUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+/* Thinking spins the sheen faster. */
+.orb2--thinking .orb2__ball::after {
+  animation-duration: 2.1s;
+}
+
+@keyframes orb2Pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+@keyframes orb2PulseStrong {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+@keyframes orb2FloatUp {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-18px);
+  }
+}
+@keyframes orb2Halo {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+@keyframes orb2Rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes orb2Ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+/* ---- Transcript + status + mic ---- */
+/* The agent's spoken line, shown while (and after) it talks. */
+.orb-transcript {
+  margin-top: 20px;
+  max-width: min(560px, 84vw);
+  min-height: 2.6em;
+  text-align: center;
+  font-size: 1.02rem;
+  font-weight: 600;
+  line-height: 1.9;
+  color: rgba(255, 255, 255, 0.94);
+  text-shadow: 0 1px 12px rgba(15, 9, 24, 0.6);
+}
+
+/* The way back to the text chat — voice is a choice, not a lock-in. */
+.orb-alt {
+  margin-top: 16px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.62);
+  text-shadow: 0 1px 8px rgba(15, 9, 24, 0.5);
+}
+
+.orb-status {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 10px rgba(15, 9, 24, 0.55);
+  min-height: 1.2em;
+}
+
+.orb-mic {
+  position: relative;
+  margin: 16px auto 0;
+  width: 66px;
+  height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #fff;
+  border: none;
+  background: linear-gradient(145deg, var(--orb-purple), var(--orb-terracotta));
+  box-shadow: 0 14px 28px -10px rgba(137, 128, 188, 0.85);
+  transition: transform 0.18s ease, box-shadow 0.2s ease;
+}
+.orb-mic:hover {
+  transform: translateY(-2px);
+}
+.orb-mic:active {
+  transform: scale(0.96);
+}
+/* Waiting on the model — the mic is out of the user's hands for a moment. */
+.orb-mic:disabled {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+}
+.orb-mic--active {
+  background: linear-gradient(145deg, var(--orb-terracotta), var(--orb-purple));
+}
+.orb-mic__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--orb-purple);
+  animation: orbMicRing 1.6s ease-out infinite;
+}
+.orb-mic--talking .orb-mic__ring {
+  border-color: var(--orb-terracotta);
+  animation-duration: 1s;
+}
+.orb-mic--thinking .orb-mic__ring {
+  animation-duration: 2.2s;
+}
+@keyframes orbMicRing {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.85);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-strip {
+    transition: none;
+  }
+  .orb-strip__chevron,
+  .orb-mic__ring,
+  .orb2__ball,
+  .orb2__ball::after,
+  .orb2__ripple,
+  .orb2__halo,
+  .orb2--listening,
+  .orb2--listening .orb2__ball,
+  .orb2--talking .orb2__ball {
+    animation: none;
+  }
+}
