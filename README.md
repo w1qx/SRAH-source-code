@@ -1,4 +1,4 @@
-# <img src="frontend/src/app/icon.svg" alt="Srah Icon" width="80" align="right" /> سراة | Srah
+# <img src="frontend/src/app/icon.svg" alt="Srah Icon" width="80" align="right" /> 
 
 > منصة سراة الاستشارية للتمويل العقاري والائتماني الموحد.
 > Official Domain: [srah.sa](https://srah.sa)
