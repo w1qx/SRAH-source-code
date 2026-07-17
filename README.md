@@ -1,10 +1,58 @@
-# SRAH Source Code (Consolidated Repository)
+# <img src="frontend/public/logo_srah.png" alt="Srah Logo" width="120" align="right" /> سراة | Srah
 
-This repository contains both the frontend and backend applications for **سراة (Srah)**.
+> منصة سراة الاستشارية للتمويل العقاري والائتماني الموحد.
+> Official Domain: [srah.sa](https://srah.sa)
 
-## Project Structure
-- `frontend/` - Next.js web application (React, Tailwind CSS, Framer Motion)
-- `backend/` - Node.js Express server (TypeScript, Prisma DB ORM, PostgreSQL)
+---
 
-## Branches
-- `ai-assistant` - Active development branch containing the latest features, including interactive consent flow, Nafath/SIMAH onboarding checks, and voice/chat advisor improvements.
+## 📌 عن المشروع (Project Overview)
+سراة (Srah) هي منصة استشارية متكاملة تساعد المستخدمين في تحليل ملاءتهم المالية وتقييم قدرتهم الائتمانية للحصول على التمويل العقاري بما يتوافق مع ضوابط البنك المركزي السعودي (SAMA).
+
+تتكون المنصة من مستودع برمجيات موحد يجمع بين:
+- **الواجهة الأمامية (Frontend):** مبنية باستخدام Next.js (React, Tailwind CSS, Framer Motion) لتقديم تجربة تفاعلية وسلسة.
+- **الواجهة الخلفية (Backend):** مبنية باستخدام Express (Node.js, TypeScript, Prisma, PostgreSQL) لتشغيل محرك التحليل المالي المستقل.
+
+---
+
+## 📂 هيكل المجلدات (Repository Directory Structure)
+- `frontend/` - كود تطبيق الويب والواجهات التفاعلية.
+- `backend/` - كود خادم التحليلات والربط وقاعدة البيانات.
+
+---
+
+## ⚠️ تنويه هام للتطوير المحلي (Important Notice for Local Testing)
+عند تشغيل التطبيق في بيئة التطوير المحلية (Localhost):
+
+1. **الذكاء الاصطناعي (AI Advisor):**
+   - يتطلب الاتصال الفعلي بالذكاء الاصطناعي ضبط مفتاح الوصول الخاص بـ (Anthropic API Key) في ملف بيئة الواجهة الخلفية `.env`. في حال غيابه، يعمل النظام بشكل تلقائي باستخدام محاكاة محلية ذكية للأسئلة والإجابات لضمان تدفق التجربة بسلاسة.
+
+2. **رموز التحقق (OTP) وتسجيل الدخول:**
+   - خدمة رسائل الجوال الحقيقية محاكاة محلياً. عند محاولة تسجيل الدخول برقم الجوال أو البريد الإلكتروني، سيتم طباعة رمز التحقق (OTP) مباشرةً في **طرفية تشغيل الواجهة الخلفية (Backend Console Terminal)**.
+   - كما يتم كتابة الرمز تلقائياً في ملف `backend/otp.txt` لتسهيل قراءته ونسخه.
+
+3. **الربط مع نفاذ وسمة (Nafath & SIMAH):**
+   - عمليات الربط وسحب البيانات الحقيقية من نفاذ وسمة والتأمينات الاجتماعية (GOSI) يتم محاكاتها محلياً بقيم واقعية لتسهيل الاختبار والعروض التجريبية دون الحاجة إلى صلاحيات ربط حكومي حية.
+
+---
+
+## 🚀 التشغيل المحلي (Getting Started)
+
+### تشغيل الواجهة الخلفية (Backend)
+```bash
+cd backend
+npm install
+# ضبط قاعدة البيانات
+npx prisma generate
+npx prisma db push
+npm run dev
+```
+
+### تشغيل الواجهة الأمامية (Frontend)
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+---
+All rights reserved © [Srah.sa](https://srah.sa) 2026
