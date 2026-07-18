@@ -3,9 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAppStore, completeInput } from "@/store/useAppStore";
 import { getRules, runAnalysis } from "@/lib/api/analysis";
+import AssistantPanel from "@/components/AssistantPanel";
 import { ApiError } from "@/lib/api/client";
 import StatusBadge from "./StatusBadge";
 import DataSourceBadge from "./DataSourceBadge";
+import SamaComplianceBadge from "./SamaComplianceBadge";
+import { getOfferCompliance } from "@/lib/api/offer-compliance";
+import { emailReport } from "@/lib/api/chat";
+import type { IncomingOffer, OfferComplianceResult } from "@shared/types";
 import { PageBackdrop } from "@/components/ui/page-backdrop";
 import {
   CashFlowBar,
@@ -81,7 +86,8 @@ const ORDINAL = [
 ];
 
 export default function AnalysisPage() {
-  const { analysis, answers, setStep, setAnalysis, setAnswer } = useAppStore();
+  const { analysis, answers, setStep, setAnalysis, setAnswer, dataMethod, offer, offerAnalysis } =
+    useAppStore();
   /**
    * All three tracks are drawn together; toggling one off isolates the others. The BASELINE is
    * on by default — without it the two projections are two lines with nothing to be read against,
@@ -99,6 +105,8 @@ export default function AnalysisPage() {
   const [rateInput, setRateInput] = useState("");
   const [busy, setBusy] = useState<"rate" | "safer" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  /** The SAMA compliance verdict for the uploaded offer (backend-computed; mock for now). */
+  const [compliance, setCompliance] = useState<OfferComplianceResult | null>(null);
 
   // The red lines are published regulation — read them, don't hardcode them.
   useEffect(() => {
@@ -111,6 +119,27 @@ export default function AnalysisPage() {
       .catch(() => undefined);
     return () => controller.abort();
   }, []);
+
+  // When the user brought a bank offer, check it against SAMA's standard consumer-finance
+  // contract. The verdict is computed on the SERVER (no financial logic here) — see
+  // lib/api/offer-compliance for the mock-now / real-endpoint swap.
+  useEffect(() => {
+    if (!offer) return; // no offer → the section is gated out of the render below
+    const controller = new AbortController();
+    // Best-effort map of the extracted offer onto the IncomingOffer contract for the real call.
+    // (The mock ignores it today; kept accurate so swapping to the live endpoint is one line.)
+    const incoming: IncomingOffer = {
+      financingAmount: offer.amount,
+      termMonths: offer.termYears !== undefined ? offer.termYears * 12 : undefined,
+      monthlyInstallment: offer.monthlyInstallment,
+      profitRate: offer.apr,
+      apr: offer.apr,
+    };
+    getOfferCompliance(incoming, controller.signal)
+      .then(setCompliance)
+      .catch(() => setCompliance(null));
+    return () => controller.abort();
+  }, [offer]);
 
   const result = analysis?.result;
 
@@ -157,13 +186,54 @@ export default function AnalysisPage() {
   const lastYear = years[years.length - 1];
   const safeYears = years.filter((y) => y.riskTier === "safe").length;
   const warnings = analysis?.warnings ?? [];
+
+  /**
+   * The bank-offer comparison: Sarat's indicative reference vs the user's own offer, run on the
+   * SAME inputs. Both first-year installments come from the expected track (installment depends
+   * only on amount/term/rate, so any track's year 1 is the same figure).
+   */
+  const offerResult = offerAnalysis?.result;
+  const firstInstallment = (r: typeof result) =>
+    (r.scenarios.find((s) => s.type === "expected") ?? r.scenarios[0])?.years[0]?.installment ?? 0;
+  const offerCompare =
+    offer && offerResult
+      ? {
+          indicativeApr: result.provenance.apr,
+          offerApr: offer.apr,
+          indicativeInstallment: firstInstallment(result),
+          offerInstallment: firstInstallment(offerResult),
+          indicativeDbr: result.requestedDbr,
+          offerDbr: offerResult.requestedDbr,
+          indicativeRisk: result.overallRisk,
+          offerRisk: offerResult.overallRisk,
+          /** Monthly rial difference; positive = the offer costs more than the reference. */
+          get installmentDelta() {
+            return this.offerInstallment - this.indicativeInstallment;
+          },
+          get offerIsCheaper() {
+            return this.offerApr < this.indicativeApr;
+          },
+        }
+      : null;
   const { apr, aprIsIndicative } = result.provenance;
   // Real provenance from the backend. Older analyses predate the field — default to manual so
   // the badge never claims verification that did not happen.
-  const dataSources = result.provenance.dataSources ?? {
+  const backendSources = result.provenance.dataSources ?? {
     existingCommitments: "manual" as const,
     grossSalary: "manual" as const,
   };
+  // An upload run consulted no live bureau — the figures came out of the user's attached PDF,
+  // so salary/obligations badge as "من الملف المرفق" and never carry سمة/التأمينات verification.
+  // The سمة reference/score chip is dropped for the same reason.
+  const dataSources =
+    dataMethod === "upload"
+      ? {
+          ...backendSources,
+          grossSalary: "file" as const,
+          existingCommitments: "file" as const,
+          simah: undefined,
+        }
+      : backendSources;
 
   const cap = rules?.deductionCapEmployee ?? 0.3333;
   const safeMax = thresholds?.safeMax ?? 0.25;
@@ -240,6 +310,18 @@ export default function AnalysisPage() {
     <div className="flex-1 w-full relative bg-[#faf8f5]">
       <PageBackdrop animated={false} />
 
+      {/* Context-aware voice assistant — explains the numbers/sections on this screen. It reads
+          the client's data and the displayed result fresh at ask-time; it only ever clarifies. */}
+      <AssistantPanel
+        page="analysis"
+        getContext={() => ({
+          financials: analysis?.input ?? answers,
+          analysis: analysis?.result ?? null,
+          analysisInput: analysis?.input ?? null,
+          heldOffer: offer ?? null,
+        })}
+      />
+
       <div className="relative z-10 max-w-[1000px] mx-auto w-full px-4 py-6 space-y-5">
         <header className="animate-fade-in-up">
           <h1 className="text-2xl sm:text-[32px] leading-snug font-bold text-navy mb-2">
@@ -260,6 +342,79 @@ export default function AnalysisPage() {
               </p>
             ))}
           </div>
+        )}
+
+        {/* ---------- Bank-offer comparison (only when the user brought an offer) ---------- */}
+        {offerCompare && (
+          <section className="bg-white rounded-[15px] border border-purple/25 shadow-[0_1px_3px_rgba(8,47,62,0.06),0_10px_30px_-16px_rgba(8,47,62,0.18)] overflow-hidden animate-fade-in-up anim-delay-1">
+            <div className="h-1 bg-purple" aria-hidden="true" />
+            <div className="p-5 sm:p-6">
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <h2 className="text-lg font-bold text-navy">مقارنة عرض البنك بالمرجع</h2>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-navy/5 text-navy border-navy/15">
+                  {offer?.source === "file" ? "من ملف العرض" : "مُدخل يدوياً"}
+                </span>
+                {/* Compact SAMA-compliance flag — hover/focus/tap reveals the breached articles. */}
+                {compliance && <SamaComplianceBadge result={compliance} />}
+              </div>
+              <p className="text-sm text-text-secondary leading-relaxed mb-4">
+                {offerCompare.offerIsCheaper
+                  ? `عرض البنك أقل تكلفة من المرجع الاسترشادي: نسبة ربحه ${pct(offerCompare.offerApr)} مقابل ${pct(offerCompare.indicativeApr)}، ويوفّر نحو ${fmt(Math.abs(offerCompare.installmentDelta))} ريال شهرياً.`
+                  : offerCompare.installmentDelta === 0
+                    ? `عرض البنك مطابق تقريباً للمرجع الاسترشادي عند نسبة ربح ${pct(offerCompare.offerApr)}.`
+                    : `عرض البنك أعلى تكلفة من المرجع الاسترشادي: نسبة ربحه ${pct(offerCompare.offerApr)} مقابل ${pct(offerCompare.indicativeApr)}، ويزيد القسط نحو ${fmt(offerCompare.installmentDelta)} ريال شهرياً.`}
+              </p>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-right border-collapse min-w-[420px]">
+                  <thead>
+                    <tr className="text-[11px] text-text-secondary">
+                      <th className="font-semibold py-2 pe-3 text-right"> </th>
+                      <th className="font-bold py-2 px-3 text-navy">عرض البنك</th>
+                      <th className="font-semibold py-2 ps-3">مرجع سراة الاسترشادي</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-sm">
+                    <tr className="border-t border-border/60">
+                      <td className="py-2.5 pe-3 text-text-secondary">نسبة الربح السنوية</td>
+                      <td className="py-2.5 px-3 font-bold text-navy" style={NUM}>{pct(offerCompare.offerApr)}</td>
+                      <td className="py-2.5 ps-3 text-navy" style={NUM}>{pct(offerCompare.indicativeApr)}</td>
+                    </tr>
+                    <tr className="border-t border-border/60">
+                      <td className="py-2.5 pe-3 text-text-secondary">القسط الشهري (السنة الأولى)</td>
+                      <td className="py-2.5 px-3 font-bold text-navy" style={NUM}>{fmt(offerCompare.offerInstallment)} ريال</td>
+                      <td className="py-2.5 ps-3 text-navy" style={NUM}>{fmt(offerCompare.indicativeInstallment)} ريال</td>
+                    </tr>
+                    <tr className="border-t border-border/60">
+                      <td className="py-2.5 pe-3 text-text-secondary">نسبة الاستقطاع (DBR)</td>
+                      <td className="py-2.5 px-3 font-bold text-navy" style={NUM}>{pct(offerCompare.offerDbr)}</td>
+                      <td className="py-2.5 ps-3 text-navy" style={NUM}>{pct(offerCompare.indicativeDbr)}</td>
+                    </tr>
+                    <tr className="border-t border-border/60">
+                      <td className="py-2.5 pe-3 text-text-secondary">مستوى المخاطرة</td>
+                      <td className="py-2.5 px-3">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: TIER_COLOR[offerCompare.offerRisk] }} />
+                          {RISK_LABEL[offerCompare.offerRisk]}
+                        </span>
+                      </td>
+                      <td className="py-2.5 ps-3">
+                        <span className="inline-flex items-center gap-1.5 text-xs text-text-secondary">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: TIER_COLOR[offerCompare.indicativeRisk] }} />
+                          {RISK_LABEL[offerCompare.indicativeRisk]}
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <p className="text-[10.5px] text-text-secondary leading-relaxed mt-4 pt-3 border-t border-border/60">
+                المقارنة على نفس بياناتك ومبلغ ومدة التمويل التي أدخلتها، مع تغيير نسبة الربح فقط.
+                المرجع الاسترشادي تقديري من سراة، وليس عرضاً ائتمانياً.
+              </p>
+            </div>
+          </section>
         )}
 
         {/* ---------- The verdict ---------- */}
@@ -655,7 +810,12 @@ export default function AnalysisPage() {
 
         <div className="flex flex-col sm:flex-row gap-3 pb-2">
           <button
-            onClick={() => setStep(3)}
+            onClick={() => {
+              setStep(3);
+              emailReport().catch((err) => {
+                console.error("Failed to email report:", err);
+              });
+            }}
             className="flex-1 bg-orange hover:bg-orange-hover text-white font-semibold py-4 rounded-full text-base transition-colors min-h-[52px] cursor-pointer shadow-sm"
           >
             اعرض العروض المناسبة

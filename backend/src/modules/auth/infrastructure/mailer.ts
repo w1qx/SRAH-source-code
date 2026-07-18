@@ -11,6 +11,7 @@ import { logger } from '@/shared/logger';
  */
 export interface Mailer {
   sendOtp(params: { to: string; code: string; expiresInMinutes: number }): Promise<void>;
+  sendHtmlReport(params: { to: string; subject: string; html: string }): Promise<void>;
 }
 
 export class ConsoleMailer implements Mailer {
@@ -33,6 +34,11 @@ export class ConsoleMailer implements Mailer {
     console.log(
       `\n  ✉️  Suraa OTP for ${params.to}: ${params.code}  (valid ${params.expiresInMinutes} min)\n`,
     );
+  }
+
+  async sendHtmlReport(params: { to: string; subject: string; html: string }): Promise<void> {
+    // eslint-disable-next-line no-console
+    console.log(`\n  ✉️  [ConsoleMailer] HTML Report sent to ${params.to} with subject "${params.subject}" (HTML size: ${params.html.length} chars)\n`);
   }
 }
 
@@ -99,5 +105,16 @@ export class SmtpMailer implements Mailer {
 
     // The recipient, never the code.
     logger.info('OTP email sent', { to: params.to });
+  }
+
+  async sendHtmlReport(params: { to: string; subject: string; html: string }): Promise<void> {
+    await this.transport.sendMail({
+      from: this.from,
+      to: params.to,
+      subject: params.subject,
+      text: 'يرجى الاطلاع على تقرير سمة المرفق في البريد الإلكتروني كـ HTML.',
+      html: params.html,
+    });
+    logger.info('HTML Report email sent', { to: params.to, subject: params.subject });
   }
 }

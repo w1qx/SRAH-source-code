@@ -17,6 +17,7 @@ import type {
   OffersRepository,
   LLMProvider,
   SimahProvider,
+  VoiceProvider,
 } from '@shared/types';
 import type { Env } from './config/env';
 import { prisma } from './db/prisma';
@@ -49,7 +50,14 @@ import { PrismaChatRepository } from './modules/chat/infrastructure/chat.reposit
 import { AnthropicLLMProvider } from './modules/chat/infrastructure/anthropic-llm.provider';
 import { MockLLMProvider } from './modules/chat/infrastructure/mock-llm.provider';
 
+import { AssistantService } from './modules/assistant/application/assistant.service';
+import { InMemoryAssistantRepository } from './modules/assistant/infrastructure/assistant.repository';
+import { MockVoiceProvider } from './modules/assistant/infrastructure/mock-voice.provider';
+import { OpenAIVoiceProvider } from './modules/assistant/infrastructure/openai-voice.provider';
+
 import { OffersService } from './modules/offers/application/offers.service';
+import { OfferComplianceService } from './modules/offers/application/offer-compliance.service';
+import { PrismaOfferComplianceRepository } from './modules/offers/infrastructure/compliance.repository';
 import {
   BankApiOffersRepository,
   MockOffersRepository,
@@ -65,7 +73,9 @@ export interface Container {
   analysis: AnalysisService;
   auth: AuthService;
   chat: ChatService;
+  assistant: AssistantService;
   offers: OffersService;
+  offerCompliance: OfferComplianceService;
   dashboard: DashboardService;
   flags: FeatureFlagsService;
   guard: ReturnType<typeof createAuthGuard>;
@@ -73,6 +83,7 @@ export interface Container {
   nafath: MockNafathAuthProvider;
   externalSources: ProviderFactory;
   pullConfig: ChatPullConfig;
+  mailer: Mailer;
 }
 
 export function buildContainer(env: Env, db: Db = prisma): Container {
@@ -150,6 +161,10 @@ export function buildContainer(env: Env, db: Db = prisma): Container {
       ttlMinutes: env.OTP_TTL_MINUTES,
       maxAttempts: env.OTP_MAX_ATTEMPTS,
     },
+    undefined, // `now` — use the real clock
+    // DEV ONLY fixed OTP. Belt-and-braces: the env guard already refuses to boot production
+    // with it set; this also strips it here so it can never reach the service in prod.
+    env.NODE_ENV === 'production' ? undefined : env.DEV_OTP_CODE,
   );
 
   // --- Chat ---
@@ -170,6 +185,21 @@ export function buildContainer(env: Env, db: Db = prisma): Container {
   };
   const chat = new ChatService(llm, new PrismaChatRepository(db), analysisRepository, pullConfig);
 
+  // --- Voice assistant (analysis + offers side panels) ---
+  // Reuses the SAME `llm` the chat uses (no separate engine). The speech service sits behind the
+  // VoiceProvider port: mock by default (boots + demos with no key), OpenAI when a key is set.
+  const voice: VoiceProvider =
+    env.VOICE_PROVIDER === 'openai' && env.OPENAI_API_KEY
+      ? new OpenAIVoiceProvider({
+          apiKey: env.OPENAI_API_KEY,
+          baseUrl: env.OPENAI_BASE_URL,
+          sttModel: env.OPENAI_STT_MODEL,
+          ttsModel: env.OPENAI_TTS_MODEL,
+          ttsVoice: env.OPENAI_TTS_VOICE,
+        })
+      : new MockVoiceProvider();
+  const assistant = new AssistantService(voice, llm, new InMemoryAssistantRepository());
+
   // --- Offers ---
   const offersRepository: OffersRepository =
     env.OFFERS_PROVIDER === 'bank_api'
@@ -177,6 +207,7 @@ export function buildContainer(env: Env, db: Db = prisma): Container {
       : new MockOffersRepository(rules);
 
   const offers = new OffersService(offersRepository, analysisRepository, flags);
+  const offerCompliance = new OfferComplianceService(new PrismaOfferComplianceRepository(db));
 
   // --- Dashboard: a read model over analyses the user already ran ---
   const dashboard = new DashboardService(analysisRepository, rules);
@@ -187,7 +218,9 @@ export function buildContainer(env: Env, db: Db = prisma): Container {
     analysis,
     auth,
     chat,
+    assistant,
     offers,
+    offerCompliance,
     dashboard,
     flags,
     guard: createAuthGuard(tokens),
@@ -195,5 +228,6 @@ export function buildContainer(env: Env, db: Db = prisma): Container {
     nafath: new MockNafathAuthProvider(flags),
     externalSources,
     pullConfig,
+    mailer,
   };
 }

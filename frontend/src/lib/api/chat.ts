@@ -1,6 +1,6 @@
 "use client";
 
-import type { DataSource, UserFinancialData } from "@shared/types";
+import type { DataSource, ExtractedOffer, UserFinancialData } from "@shared/types";
 import { request } from "./client";
 
 /**
@@ -50,6 +50,34 @@ export function uploadStatement(file: File, signal?: AbortSignal): Promise<Pulle
   return request<PulledFinancialData>("/chat/statement", {
     method: "POST",
     rawBody: file,
+    // The server sanity-checks relevance; the name is its most reliable signal (Arabic text
+    // inside a PDF rarely survives as readable Unicode). Encoded so Arabic can ride a header.
+    headers: { "X-File-Name": encodeURIComponent(file.name) },
+    auth: true,
+    signal,
+  });
+}
+
+/**
+ * The "ارفع عرض البنك" step: uploads a financing offer the user holds from another bank (raw
+ * PDF body, like uploadStatement) and gets back its extracted terms — chiefly the real annual
+ * profit rate — so the analysis can compare the offer against Sarat's indicative reference.
+ * Extraction is server-side; see the backend's offer-extraction.ts for what is real vs mock.
+ */
+export function uploadOffer(file: File, signal?: AbortSignal): Promise<{ offer: ExtractedOffer }> {
+  return request<{ offer: ExtractedOffer }>("/chat/offer", {
+    method: "POST",
+    rawBody: file,
+    headers: { "X-File-Name": encodeURIComponent(file.name) },
+    auth: true,
+    signal,
+  });
+}
+
+export function emailReport(signal?: AbortSignal): Promise<{ success: boolean; email: string }> {
+  return request<{ success: boolean; email: string }>("/chat/email-report", {
+    method: "POST",
+    body: {},
     auth: true,
     signal,
   });

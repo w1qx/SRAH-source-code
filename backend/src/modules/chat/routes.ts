@@ -4,16 +4,39 @@ import type { ChatService } from './application/chat.service';
 import type { ChatPullConfig } from './application/financial-pull';
 import { pullFinancialData, resolveAutoPulled } from './application/financial-pull';
 import { extractStatement } from './application/statement-extraction';
+import { extractOffer } from './application/offer-extraction';
+import { assertRelevantDocument } from './application/document-relevance';
 import { ChatSessionParamSchema, SendMessageSchema } from './schemas';
 import { asyncHandler } from '@/shared/http/error-handler';
 import { parseBody, parseParams } from '@/shared/http/validate';
 import { authOf } from '@/modules/auth/middleware/auth-guard';
 import { askedQuestions } from './domain/questions';
+import type { Mailer } from '@/modules/auth/infrastructure/mailer';
+import type { AuthService } from '@/modules/auth/application/auth.service';
+import fs from 'fs';
+import path from 'path';
+
+/**
+ * The client sends the original file name in the `X-File-Name` header (URL-encoded, since a
+ * raw-body upload has no multipart part to carry it and Arabic can't ride a header verbatim).
+ * It's the most reliable signal the relevance gate has, so decode it defensively.
+ */
+function fileNameOf(req: { get(name: string): string | undefined }): string {
+  const raw = req.get('x-file-name');
+  if (!raw) return '';
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
 
 export function chatRouter(
   service: ChatService,
   guard: RequestHandler,
   pull: ChatPullConfig = {},
+  mailer: Mailer,
+  authService: AuthService,
 ): Router {
   const router = Router();
 
@@ -27,6 +50,53 @@ export function chatRouter(
     asyncHandler(async (_req, res) => {
       const autoPulled = await resolveAutoPulled(pull);
       res.json({ questions: askedQuestions(autoPulled) });
+    }),
+  );
+
+  /**
+   * Send the SIMAH HTML report directly to the user's email.
+   */
+  router.post(
+    '/email-report',
+    guard,
+    asyncHandler(async (req, res) => {
+      const auth = authOf(req);
+      const profile = await authService.profile(auth.userId);
+
+      // Try multiple paths to find the simah_report.html
+      const pathsToTry = [
+        path.resolve(__dirname, '../../../../Sarat-frontend/public/simah_report.html'),
+        path.resolve(__dirname, '../../../../serah/public/simah_report.html'),
+        path.resolve(process.cwd(), '../Sarat-frontend/public/simah_report.html'),
+        path.resolve(process.cwd(), '../serah/public/simah_report.html'),
+        path.resolve(process.cwd(), '../frontend/public/simah_report.html')
+      ];
+
+      let html = '';
+      let error: any = null;
+
+      for (const p of pathsToTry) {
+        try {
+          if (fs.existsSync(p)) {
+            html = fs.readFileSync(p, 'utf8');
+            break;
+          }
+        } catch (e) {
+          error = e;
+        }
+      }
+
+      if (!html) {
+        throw new Error(`Failed to load simah_report.html from any of: ${pathsToTry.join(', ')}. Last error: ${error?.message}`);
+      }
+
+      await mailer.sendHtmlReport({
+        to: profile.email,
+        subject: 'تقرير سمة الائتماني الموحد - منصة سراة',
+        html,
+      });
+
+      res.json({ success: true, email: profile.email });
     }),
   );
 
@@ -55,7 +125,26 @@ export function chatRouter(
     guard,
     raw({ type: ['application/pdf', 'application/octet-stream'], limit: '10mb' }),
     asyncHandler(async (req, res) => {
-      res.json(await extractStatement(req.body as Buffer));
+      const file = req.body as Buffer;
+      assertRelevantDocument(file, fileNameOf(req));
+      res.json(await extractStatement(file));
+    }),
+  );
+
+  /**
+   * The "ارفع عرض البنك" step: the user uploads a financing offer they hold from another bank
+   * (raw PDF body, like /statement) and its terms — chiefly the real annual profit rate — are
+   * extracted server-side so the analysis can compare the offer against Sarat's indicative
+   * reference. See offer-extraction.ts for what is real vs mock.
+   */
+  router.post(
+    '/offer',
+    guard,
+    raw({ type: ['application/pdf', 'application/octet-stream'], limit: '10mb' }),
+    asyncHandler(async (req, res) => {
+      const file = req.body as Buffer;
+      assertRelevantDocument(file, fileNameOf(req));
+      res.json({ offer: await extractOffer(file) });
     }),
   );
 

@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useAppStore, REQUIRED_FIELDS, completeInput } from "@/store/useAppStore";
-import { getQuestions, pullFinancialData, uploadStatement, type ScopedQuestion } from "@/lib/api/chat";
+import { getQuestions, pullFinancialData, uploadStatement, uploadOffer, type ScopedQuestion } from "@/lib/api/chat";
 import { getFeatureFlags } from "@/lib/api/feature-flags";
 import { ApiError } from "@/lib/api/client";
 import { toast } from "@/lib/toast";
@@ -12,7 +12,7 @@ import AiOrbDrawer from "@/components/AiOrbDrawer";
 import { BOUNDS } from "@/lib/field-bounds";
 import { GridPattern } from "@/components/ui/page-backdrop";
 import AnimatedStepList, { type Step, type StepStatus } from "@/features/searching/AnimatedStepList";
-import type { DataSource, UserFinancialData } from "@shared/types";
+import type { ExtractedOffer, UserFinancialData } from "@shared/types";
 import {
   motion,
   useMotionValue,
@@ -33,13 +33,36 @@ const GREETING_WORDS = ["أهلًا،", "أنا", "سراة"];
  */
 const FLASH_HOLD_MS = 2900;
 
-const SEARCH_STEPS = [
+/** The Nafath path checklist — live, verified pulls from GOSI and SIMAH. */
+const NAFATH_STEPS = [
   { id: "verify", label: "نتحقق من بياناتك" },
   { id: "gosi", label: "نجلب دخلك من التأمينات الاجتماعية" },
   { id: "simah", label: "نجلب تقريرك الائتماني من سمة" },
   { id: "match", label: "نطابق مع أنظمة الإقراض المسؤول" },
   { id: "prepare", label: "نجهّز تحليلك" },
 ] as const;
+
+/**
+ * The upload path checklist — deliberately NO سمة/تأمينات steps: on this path every live
+ * link is OFF and the figures come out of the attached PDF only. Claiming a bureau pull
+ * here would contradict the sidebar's "غير مفعّل" indicators.
+ */
+const UPLOAD_STEPS = [
+  { id: "verify", label: "نتحقق من الملف المرفق" },
+  { id: "extract", label: "نستخرج الراتب والالتزامات من التقرير" },
+  { id: "match", label: "نطابق مع أنظمة الإقراض المسؤول" },
+  { id: "prepare", label: "نجهّز تحليلك" },
+] as const;
+
+/**
+ * The demo script's fixed figures — the SAME numbers the backend mocks return (GOSI
+ * contribution wage / SIMAH total installments). Used as the Nafath path's fallback when
+ * the backend pull flags are off, so the pull always lands 11,068 / 2,133 with the
+ * rightful GOSI/SIMAH provenance.
+ */
+const DEMO_GOSI_SALARY = 11_068;
+const DEMO_SIMAH_COMMITMENTS = 2_133;
+const DEMO_GOSI_TENURE_YEARS = 7;
 /** Must match the `.flash-stage` transition in globals.css. */
 const FLASH_FADE_MS = 620;
 
@@ -92,15 +115,12 @@ function formatNumber(val: string | number): string {
 const YEAR_FIELDS = new Set<keyof UserFinancialData>(["termYears", "tenureYears"]);
 
 /**
- * The two figures SIMAH can verify. While SIMAH is off these are self-declared ("مُدخل يدوياً");
- * when the flag is on they will be replaced by the bureau's verified numbers at analysis time.
- */
-
-/**
- * The headline auto-pulled figures (GOSI salary, SIMAH obligations) surfaced — with their source
- * badge — in the sidebar and review. Sector and tenure are also pulled and merged into `answers`
- * (so the analysis input is complete), but they aren't shown as cards here; these two are the
- * ones the pull story is about, and both render as clean "X ريال" amounts.
+ * The headline auto-filled figures (salary, obligations) surfaced — with their source badge —
+ * in the sidebar and review. On the Nafath path they arrive verified (GOSI salary, SIMAH
+ * obligations); on the upload path they are extracted from the PDF and badge as "من الملف
+ * المرفق". Sector and tenure are also filled and merged into `answers` (so the analysis input
+ * is complete), but they aren't shown as cards here; these two are the ones the story is
+ * about, and both render as clean "X ريال" amounts.
  */
 const PULLED_FIELDS: { field: keyof UserFinancialData; ar: string; short: string }[] = [
   { field: "grossSalary", ar: "الراتب الشهري الإجمالي", short: "الراتب الشهري" },
@@ -111,7 +131,16 @@ interface ChatMessage {
   type: "bot" | "user";
   text: string;
   questionIndex?: number;
+  /** Synthetic in-chat steps that aren't backend questions: the offer gate and the offer upload. */
+  kind?: "offerGate" | "offerInput";
 }
+
+/** The offer gate — the FIRST question the chat asks, before anything else. */
+const OFFER_GATE_QUESTION = "بدايةً، هل لديك عرض تمويلي من بنك آخر تودّ أن أحلّله وأقارنه بالمرجع؟";
+
+/** Sensible bounds for a typed annual profit rate (percent). */
+const OFFER_APR_MIN_PCT = 0.1;
+const OFFER_APR_MAX_PCT = 50;
 
 export default function ConversationPage() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -145,7 +174,28 @@ export default function ConversationPage() {
     setReviewMode,
     reviewMode,
     setIsAnalyzing,
+    dataMethod,
+    setDataMethod,
+    pulledProvenance,
+    mergePulledProvenance,
+    setHasBankOffer,
+    offer,
+    setOffer,
   } = useAppStore();
+  // hasBankOffer / offerMode are read fresh via getState() inside the questions-load effect,
+  // so they aren't destructured here (they'd only be stale render-time snapshots).
+
+  /**
+   * What the answer area is showing. "gate" is the yes/no offer question (the FIRST question);
+   * "questions" is the normal question walk. On "yes" an upload popup interrupts the chat.
+   */
+  const [stage, setStage] = useState<"questions" | "gate">("questions");
+  /** The interrupting offer-upload popup: open after the user answers the gate with "yes". */
+  const [offerModalOpen, setOfferModalOpen] = useState(false);
+  /** The typed-rate fallback inside the popup (percent). */
+  const [offerAprInput, setOfferAprInput] = useState("");
+  /** True while an uploaded offer PDF is being parsed. */
+  const [offerUploading, setOfferUploading] = useState(false);
 
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -161,10 +211,8 @@ export default function ConversationPage() {
   const [openBanking, setOpenBanking] = useState(false);
   /** SIMAH credit verification — gated by the `simah_credit` flag, off by default. */
   const [simahEnabled, setSimahEnabled] = useState(false);
-  /** Source of each auto-pulled field, so the sidebar/review can badge them. Empty = nothing pulled. */
-  const [pulledProvenance, setPulledProvenance] = useState<
-    Partial<Record<keyof UserFinancialData, DataSource>>
-  >({});
+  /** GOSI income verification — gated by the `gosi_income` flag, off by default. */
+  const [gosiEnabled, setGosiEnabled] = useState(false);
 
   // Gateway Onboarding States
   const [gatewayState, setGatewayState] = useState<"choose" | "nafath_modal" | "nafath_confirm" | "pdf_processing" | "pulling_data" | "completed">(() => {
@@ -184,6 +232,9 @@ export default function ConversationPage() {
   const [activeStep, setActiveStep] = useState(0);
   const [dataLoaded, setDataLoaded] = useState(false);
 
+  // Which checklist the "pulling_data" stage plays: the upload path never claims a bureau pull.
+  const gatewaySteps = dataMethod === "upload" ? UPLOAD_STEPS : NAFATH_STEPS;
+
   // Nafath timer countdown
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -201,9 +252,10 @@ export default function ConversationPage() {
   // Step checklist interval driver
   useEffect(() => {
     if (gatewayState !== "pulling_data") return;
+    const stepCount = gatewaySteps.length;
     const timer = setInterval(() => {
       setActiveStep((current) => {
-        if (current >= SEARCH_STEPS.length) {
+        if (current >= stepCount) {
           clearInterval(timer);
           return current;
         }
@@ -211,17 +263,17 @@ export default function ConversationPage() {
       });
     }, 700);
     return () => clearInterval(timer);
-  }, [gatewayState]);
+  }, [gatewayState, gatewaySteps.length]);
 
   // Transition to completed when checklist finishes and data is fully ready
   useEffect(() => {
-    if (gatewayState === "pulling_data" && activeStep >= SEARCH_STEPS.length && dataLoaded) {
+    if (gatewayState === "pulling_data" && activeStep >= gatewaySteps.length && dataLoaded) {
       const delay = setTimeout(() => {
         setGatewayState("completed");
       }, 500);
       return () => clearTimeout(delay);
     }
-  }, [gatewayState, activeStep, dataLoaded]);
+  }, [gatewayState, activeStep, dataLoaded, gatewaySteps.length]);
 
   const handleNafathSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -242,19 +294,43 @@ export default function ConversationPage() {
         try {
           await mockNafathLogin(nationalId);
           toast.success("تم تأكيد الهوية", "تم التحقق من هويتك عبر نفاذ.");
+          // Nafath IS the live-link path: from here on سمة والتأمينات show as مفعّل.
+          setDataMethod("nafath");
           setDataLoaded(false);
           setActiveStep(0);
           setGatewayState("pulling_data");
-          
-          // Trigger pullFinancialData to update the store with fetched data
+
+          // Live pull from GOSI/SIMAH. The demo contract fixes what this path lands on:
+          // GOSI salary 11,068 and SIMAH obligations 2,133 — when a backend pull flag is
+          // off the pull comes back without that field, so the same figure is filled here
+          // with its rightful source. The numbers never change, only who reports them.
           const result = await pullFinancialData();
-          for (const [field, value] of Object.entries(result.pulled)) {
+          const pulled = { ...result.pulled };
+          const provenance = { ...result.provenance };
+          if (pulled.grossSalary === undefined) {
+            pulled.grossSalary = DEMO_GOSI_SALARY;
+            provenance.grossSalary = "gosi";
+          }
+          if (pulled.employmentSector === undefined) {
+            pulled.employmentSector = "private";
+            provenance.employmentSector = "gosi";
+          }
+          if (pulled.tenureYears === undefined) {
+            pulled.tenureYears = DEMO_GOSI_TENURE_YEARS;
+            provenance.tenureYears = "gosi";
+          }
+          if (pulled.existingCommitments === undefined) {
+            pulled.existingCommitments = DEMO_SIMAH_COMMITMENTS;
+            provenance.existingCommitments = "simah";
+          }
+          for (const [field, value] of Object.entries(pulled)) {
             setAnswer(field as keyof UserFinancialData, value as never);
           }
-          setPulledProvenance(result.provenance);
+          mergePulledProvenance(provenance);
           setDataLoaded(true);
         } catch (err) {
           toast.error("فشل التحقق عبر نفاذ", err instanceof Error ? err.message : "حدث خطأ غير متوقع");
+          setDataMethod(null);
           setGatewayState("choose");
         }
       }, 4000);
@@ -263,25 +339,35 @@ export default function ConversationPage() {
 
   const handlePdfUpload = async (file: File) => {
     setSelectedFileName(file.name);
+    // The upload path switches every live link OFF: سمة وساما والتأمينات show as غير مفعّل
+    // and nothing from this run may carry their verification badge.
+    setDataMethod("upload");
     setGatewayState("pdf_processing");
 
     try {
       // Real round-trip: the backend validates and parses the report, answering with the
-      // same { pulled, provenance } contract as /chat/pull — so it merges identically and
-      // the extracted figures carry the "موثّق من سمة" badge.
+      // same { pulled, provenance } contract as /chat/pull — so it merges identically. The
+      // figures come back with the 'file' provenance ("من الملف المرفق"), never سمة's badge.
       const result = await uploadStatement(file);
       for (const [field, value] of Object.entries(result.pulled)) {
         setAnswer(field as keyof UserFinancialData, value as never);
       }
-      setPulledProvenance((prev) => ({ ...prev, ...result.provenance }));
-      toast.success("تم تحليل تقرير سمة بنجاح", `تم استخراج الراتب والالتزامات من الملف: ${file.name}`);
+      mergePulledProvenance(result.provenance);
+      toast.success("تم تحليل الملف بنجاح", `تم استخراج الراتب والالتزامات من الملف: ${file.name}`);
 
       // Go to checklist step and mark data as loaded
       setDataLoaded(true);
       setActiveStep(0);
       setGatewayState("pulling_data");
-    } catch {
-      toast.error("تعذّر تحليل الملف", "تأكد أن الملف تقرير PDF صالح ثم أعد المحاولة.");
+    } catch (err) {
+      // An irrelevant file is rejected server-side with a specific Arabic reason — show it, so
+      // the user knows to attach a real credit report rather than just "a PDF".
+      const relevance = err instanceof ApiError && err.code === "validation_failed";
+      toast.error(
+        relevance ? "ملف غير ذي صلة" : "تعذّر تحليل الملف",
+        relevance ? err.message : "تأكد أن الملف تقرير PDF صالح ثم أعد المحاولة.",
+      );
+      setDataMethod(null);
       setGatewayState("choose");
     }
   };
@@ -289,20 +375,10 @@ export default function ConversationPage() {
   useEffect(() => {
     const controller = new AbortController();
 
-    // Auto-pull the fields the chat no longer asks for (GOSI salary/sector/tenure, SIMAH
-    // obligations) and merge them into the answers, so the review is complete and analysis can
-    // run. Returns empty objects when the flags are off, so this is a safe no-op then. Done here
-    // (not only on the searching screen) so it works no matter how the advisor was reached.
-    pullFinancialData(controller.signal)
-      .then((result) => {
-        for (const [field, value] of Object.entries(result.pulled)) {
-          setAnswer(field as keyof UserFinancialData, value as never);
-        }
-        setPulledProvenance(result.provenance);
-      })
-      .catch(() => {
-        /* Best-effort: a failed pull just leaves those fields to be asked/blank. */
-      });
+    // NO auto-pull on mount anymore: the gateway owns the pull. Which sources are consulted
+    // is the user's choice — the Nafath path pulls live from GOSI/SIMAH, the upload path
+    // extracts from the PDF with every live link off. An unconditional pull here would stamp
+    // bureau provenance onto an upload run, contradicting the sidebar's "غير مفعّل" state.
 
     getQuestions(controller.signal)
       .then((qs) => {
@@ -312,7 +388,22 @@ export default function ConversationPage() {
         // `chatStarted` is read fresh: a user who navigates back mid-flow must not be restarted.
         if (qs.length > 0 && !useAppStore.getState().chatStarted) {
           setChatStarted(true);
-          setMessages([{ type: "bot", text: qs[0].ar, questionIndex: 0 }]);
+          const s = useAppStore.getState();
+          if (s.offerMode && !s.offer) {
+            // Launched from the dashboard's offer button: the decision is already "yes", so
+            // skip the gate and open the upload popup straight away.
+            setMessages([]);
+            setStage("gate");
+            setOfferModalOpen(true);
+          } else if (s.hasBankOffer === null) {
+            // The offer gate is the FIRST question the chat asks.
+            setMessages([{ type: "bot", text: OFFER_GATE_QUESTION, kind: "offerGate" }]);
+            setStage("gate");
+          } else {
+            // Already decided (e.g. navigated back) — go straight to the first real question.
+            setMessages([{ type: "bot", text: qs[0].ar, questionIndex: 0 }]);
+            setStage("questions");
+          }
         }
       })
       .catch((e: unknown) => {
@@ -328,19 +419,36 @@ export default function ConversationPage() {
       .then((flags) => {
         setOpenBanking(flags.find((f) => f.key === "open_banking")?.enabled ?? false);
         setSimahEnabled(flags.find((f) => f.key === "simah_credit")?.enabled ?? false);
+        setGosiEnabled(flags.find((f) => f.key === "gosi_income")?.enabled ?? false);
       })
       .catch(() => {
         setOpenBanking(false);
         setSimahEnabled(false);
+        setGosiEnabled(false);
       });
 
     return () => controller.abort();
-  }, [setChatStarted, setAnswer]);
+  }, [setChatStarted]);
 
   /** The pulled fields that actually arrived, ready to render with their badges. */
   const pulledDisplay = PULLED_FIELDS.filter(
     (f) => pulledProvenance[f.field] && answers[f.field] !== undefined,
   );
+
+  /**
+   * The chosen gateway path drives ALL three connection indicators — and once a path is
+   * picked, the path wins over the backend flags (they only speak before a choice is made):
+   *  - nafath → the live verified pull: ساما والتأمينات وسمة all ON.
+   *  - upload → data is from the PDF only: every live link OFF.
+   *  - no choice yet → the backend feature flags decide, as before.
+   * Driving all three the same way keeps them from ever disagreeing (the old bug: Nafath
+   * lit سمة والتأمينات but left "حالة الربط" tied to the off-by-default open_banking flag).
+   */
+  const linkedFor = (flag: boolean): boolean =>
+    dataMethod === "nafath" ? true : dataMethod === "upload" ? false : flag;
+  const samaLinked = linkedFor(openBanking);
+  const simahLinked = linkedFor(simahEnabled);
+  const gosiLinked = linkedFor(gosiEnabled);
 
   /* --- The greeting flash: fade in, hold, dissolve into the first question. --- */
   const [flashPhase, setFlashPhase] = useState<"in" | "out" | "done">("in");
@@ -423,7 +531,7 @@ export default function ConversationPage() {
   }, [currentQuestion, chatStarted, reviewMode]);
 
 
-  /** Commits one typed answer and advances, or flips to review when the last field is in. */
+  /** Commits one answer and advances, or flips to review when the last field is in. */
   const commit = (field: keyof UserFinancialData, value: string | number, display: string) => {
     setAnswer(field, value as never);
 
@@ -439,6 +547,114 @@ export default function ConversationPage() {
 
     setMessages(newMessages);
     setInputValue("");
+  };
+
+  /**
+   * Hands control to the normal question walk, starting at the FIRST unanswered question — so
+   * any fields pre-filled from an uploaded offer (goal/amount/term) are skipped. Optionally
+   * prepends a user echo and a bot summary of what the offer supplied.
+   */
+  const startQuestions = (extraUserText?: string, pulledSummary?: string) => {
+    setStage("questions");
+    const answered = useAppStore.getState().answers;
+    const firstUnanswered = questions
+      ? questions.findIndex((q) => answered[q.field] === undefined)
+      : 0;
+    const startIdx = firstUnanswered === -1 ? (questions?.length ?? 0) : firstUnanswered;
+    setCurrentQuestion(startIdx);
+
+    const msgs: ChatMessage[] = [];
+    if (extraUserText) msgs.push({ type: "user", text: extraUserText });
+    if (pulledSummary) msgs.push({ type: "bot", text: pulledSummary });
+    if (questions && startIdx < questions.length) {
+      msgs.push({ type: "bot", text: questions[startIdx].ar, questionIndex: startIdx });
+    }
+    setMessages((m) => [...m, ...msgs]);
+
+    // Every field already filled (e.g. a complete offer) → straight to review.
+    if (questions && startIdx >= questions.length) setReviewMode(true);
+  };
+
+  /**
+   * Answers the FIRST question — the offer gate.
+   *  - Yes → a popup interrupts the chat to upload the offer (the chat continues after it).
+   *  - No  → the chat continues normally into the first real question.
+   */
+  const answerOfferGate = (yes: boolean) => {
+    setHasBankOffer(yes);
+    if (yes) {
+      setMessages((m) => [...m, { type: "user", text: "نعم، لديّ عرض من بنك" }]);
+      setOfferModalOpen(true); // the popup takes over from here
+    } else {
+      setOffer(null);
+      startQuestions("لا، لا يوجد عرض");
+    }
+  };
+
+  /** Records the offer collected in the popup, closes it, and continues the chat. */
+  const provideOffer = (o: ExtractedOffer) => {
+    setOffer(o);
+    setOfferModalOpen(false);
+    setOfferAprInput("");
+
+    // A real bank offer states the purpose, amount and tenure — pull them into the answers so
+    // the chat doesn't ask for what the offer already tells us. (A typed offer has only the
+    // rate, so nothing is pre-filled and those questions are still asked.)
+    const summaryParts: string[] = [];
+    if (o.goal !== undefined) {
+      setAnswer("goal", o.goal as never);
+      summaryParts.push(`الهدف: ${labelFor("goal", o.goal)}`);
+    }
+    if (o.amount !== undefined) {
+      setAnswer("financingAmount", o.amount as never);
+      summaryParts.push(`المبلغ: ${labelFor("financingAmount", o.amount)}`);
+    }
+    if (o.termYears !== undefined) {
+      setAnswer("termYears", o.termYears as never);
+      summaryParts.push(`المدة: ${labelFor("termYears", o.termYears)}`);
+    }
+
+    const echo =
+      o.source === "file" ? "تم رفع عرض البنك" : `نسبة ربح العرض: ${(o.apr * 100).toLocaleString("en-US")}%`;
+    const pulledSummary =
+      summaryParts.length > 0
+        ? `استخرجت من عرضك — ${summaryParts.join("، ")}. تبقّى بعض التفاصيل عن وضعك المالي.`
+        : undefined;
+    startQuestions(echo, pulledSummary);
+  };
+
+  /** Closing the popup without an offer — proceed with the chat, no comparison. */
+  const skipOfferModal = () => {
+    setOfferModalOpen(false);
+    setOffer(null);
+    setOfferAprInput("");
+    startQuestions();
+  };
+
+  const handleOfferUpload = async (file: File) => {
+    setOfferUploading(true);
+    try {
+      const { offer: extracted } = await uploadOffer(file);
+      toast.success("تم تحليل عرض البنك", `نسبة الربح في العرض ${(extracted.apr * 100).toLocaleString("en-US")}%`);
+      provideOffer(extracted);
+    } catch (err) {
+      const relevance = err instanceof ApiError && err.code === "validation_failed";
+      toast.error(
+        relevance ? "ملف غير ذي صلة" : "تعذّر قراءة العرض",
+        relevance ? err.message : "تأكد أن الملف عرض بصيغة PDF ثم أعد المحاولة.",
+      );
+    } finally {
+      setOfferUploading(false);
+    }
+  };
+
+  const handleOfferTyped = () => {
+    const pct = parseFloat(toAsciiDigits(offerAprInput).replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(pct) || pct < OFFER_APR_MIN_PCT || pct > OFFER_APR_MAX_PCT) {
+      toast.error(`أدخل نسبة ربح صحيحة بين ${OFFER_APR_MIN_PCT} و${OFFER_APR_MAX_PCT}%.`);
+      return;
+    }
+    provideOffer({ apr: pct / 100, source: "manual" });
   };
 
   const handleQuickReply = (value: string, label: string) => {
@@ -556,8 +772,52 @@ export default function ConversationPage() {
   const restart = () => {
     setReviewMode(false);
     setCurrentQuestion(0);
+    // The offer decision is already made; restart drops straight into the first real question.
+    setStage("questions");
     setMessages(questions ? [{ type: "bot", text: questions[0].ar, questionIndex: 0 }] : []);
   };
+
+  /**
+   * Re-position the text chat onto whatever the voice assistant collected, so the two flows are
+   * interchangeable: the user can answer some questions by voice, close the orb, and keep typing
+   * exactly where it left off (and the reverse already works — voice reads the same store). Voice
+   * writes answers / the offer gate / the cursor into the shared store; here we rebuild the chat's
+   * own local view (stage, the current question bubble) to match.
+   */
+  const resyncFromVoice = useCallback(() => {
+    if (!questions) return;
+    const s = useAppStore.getState();
+    if (s.reviewMode) return; // voice completed everything — the chat renders the review screen.
+
+    const idx = questions.findIndex((q) => s.answers[q.field] === undefined || s.answers[q.field] === null);
+    const startIdx = idx === -1 ? questions.length : idx;
+
+    // Offer gate still open → let the chat ask it (the "yes/no" buttons).
+    if (s.hasBankOffer === null) {
+      setStage("gate");
+      return;
+    }
+    // Gate was "yes" but no rate captured yet, and there's still more to do → collect the rate
+    // via the popup. (If every question is already answered we don't divert — go to review.)
+    if (s.hasBankOffer === true && !s.offer && startIdx < questions.length) {
+      setStage("gate");
+      setOfferModalOpen(true);
+      return;
+    }
+
+    setStage("questions");
+    setCurrentQuestion(startIdx);
+    if (startIdx >= questions.length) {
+      setReviewMode(true);
+      return;
+    }
+    // Make sure the question the user should answer next is the last bubble on screen.
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.type === "bot" && last.questionIndex === startIdx) return prev;
+      return [...prev, { type: "bot", text: questions[startIdx].ar, questionIndex: startIdx }];
+    });
+  }, [questions, setCurrentQuestion, setReviewMode]);
 
   /* ------------------------------------------------------------------ */
   /* Error / greeting flash                                              */
@@ -786,7 +1046,7 @@ export default function ConversationPage() {
           )}
 
           {gatewayState === "pulling_data" && (() => {
-            const stepModel: Step[] = SEARCH_STEPS.map((step, i) => {
+            const stepModel: Step[] = gatewaySteps.map((step, i) => {
               const status: StepStatus = i < activeStep ? "done" : i === activeStep ? "running" : "pending";
               return { id: step.id, title: step.label, status };
             });
@@ -800,10 +1060,14 @@ export default function ConversationPage() {
               >
                 <ProcessSeal />
                 <h1 className="mt-6 text-xl font-bold text-navy">
-                  جارٍ جلب بياناتك التمويلية...
+                  {dataMethod === "upload"
+                    ? "جارٍ تجهيز بياناتك من الملف المرفق..."
+                    : "جارٍ جلب بياناتك التمويلية..."}
                 </h1>
                 <p className="mt-1.5 text-xs text-text-secondary">
-                  يرجى عدم إغلاق هذه الصفحة لتفويض السحب بنجاح.
+                  {dataMethod === "upload"
+                    ? "يرجى عدم إغلاق هذه الصفحة حتى اكتمال الاستخراج."
+                    : "يرجى عدم إغلاق هذه الصفحة لتفويض السحب بنجاح."}
                 </p>
 
                 <AnimatedStepList className="mt-6 text-right w-full" steps={stepModel} />
@@ -843,7 +1107,7 @@ export default function ConversationPage() {
           chat card — so its z-5 is guaranteed to paint under the card's z-10. Gets the same
           backend-owned questions, so the voice agent asks exactly what the chat asks.
           Hidden on the review form: answers are complete there, so voice has no job. */}
-      {!reviewMode && <AiOrbDrawer questions={questions} />}
+      {!reviewMode && <AiOrbDrawer questions={questions} onSync={resyncFromVoice} />}
 
       {reviewMode ? (
         <div className="flex w-[92%] max-w-[820px] max-h-full relative bg-slate-50/95 border border-border rounded-[32px] p-4 md:p-5 shadow-[0_25px_60px_rgba(8,47,62,0.15)] z-10 animate-fade-in-up mx-auto" dir="rtl">
@@ -888,10 +1152,13 @@ export default function ConversationPage() {
               ))}
             </div>
 
-            {/* Auto-verified figures pulled from GOSI/SIMAH — shown with their source, not asked. */}
+            {/* Auto-filled figures — GOSI/SIMAH verified on the Nafath path, extracted from the
+                attached PDF on the upload path. The badge on each row says which, per figure. */}
             {pulledDisplay.length > 0 && (
               <div className="mt-4 space-y-2">
-                <p className="text-[11px] font-bold text-text-secondary">موثّقة تلقائياً</p>
+                <p className="text-[11px] font-bold text-text-secondary">
+                  {dataMethod === "upload" ? "مستخرجة من ملفك المرفق" : "موثّقة تلقائياً"}
+                </p>
                 {pulledDisplay.map((f) => (
                   <div
                     key={f.field}
@@ -906,6 +1173,24 @@ export default function ConversationPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* The bank offer to be compared, if one was provided. */}
+            {offer && (
+              <div className="mt-4 space-y-2">
+                <p className="text-[11px] font-bold text-text-secondary">عرض البنك المُراد مقارنته</p>
+                <div className="flex items-center justify-between gap-2 py-2.5 px-3.5 rounded-[20px] bg-purple-light/40 border border-purple/20">
+                  <span className="text-sm text-text-secondary">نسبة ربح العرض السنوية</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="font-semibold text-navy" style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {(offer.apr * 100).toLocaleString("en-US")}%
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-navy/5 text-navy border-navy/15">
+                      {offer.source === "file" ? "من ملف العرض" : "مُدخل يدوياً"}
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -931,8 +1216,8 @@ export default function ConversationPage() {
         // the viewport on a short window.
         <div className="flex flex-col md:flex-row items-stretch w-[92%] max-w-[1100px] h-[680px] max-h-full relative bg-slate-50/95 border border-border rounded-[32px] p-4 md:p-5 gap-4 md:gap-5 shadow-[0_25px_60px_rgba(8,47,62,0.15)] z-10 animate-chat-in" dir="rtl">
           {/* Sidebar — your data as it is collected. Nothing here is invented. */}
-          <aside className="w-full md:w-[280px] flex flex-col text-right justify-between shrink-0 animate-chat-panel chat-panel-delay-1">
-            <div>
+          <aside className="w-full md:w-[280px] flex flex-col text-right shrink-0 animate-chat-panel chat-panel-delay-1 min-h-0 overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto pr-0.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border hover:[&::-webkit-scrollbar-thumb]:bg-navy/30">
               <div className="flex items-center gap-3.5 mb-5 justify-start">
                 <img src="/sama.svg" className="w-[130px] h-auto object-contain shrink-0" alt="SAMA logo" />
                 <div className="border-r border-border/80 pr-3.5 py-0.5 text-right">
@@ -942,6 +1227,22 @@ export default function ConversationPage() {
                   </p>
                 </div>
               </div>
+
+              {/* Which gateway path filled this run — said out loud, on the chat page itself,
+                  so no one has to infer it from the card states below. */}
+              {dataMethod && (
+                <div
+                  className={`mb-4 rounded-2xl border p-2.5 px-3.5 text-[10.5px] font-bold leading-relaxed text-right ${
+                    dataMethod === "nafath"
+                      ? "bg-safe-bg/60 text-safe border-safe/20"
+                      : "bg-navy/5 text-navy border-navy/15"
+                  }`}
+                >
+                  {dataMethod === "nafath"
+                    ? "مصدر بياناتك: سحب مباشر موثّق عبر نفاذ — سمة والتأمينات مفعّلة."
+                    : "مصدر بياناتك: ملف مرفق (PDF) — الربط مع ساما وسمة والتأمينات متوقف."}
+                </div>
+              )}
 
               <div className="bg-white border border-border/70 rounded-[20px] p-4 mb-4 shadow-[0_6px_20px_-8px_rgba(8,47,62,0.18)]">
                 <div className="flex items-center justify-between gap-2 mb-2.5">
@@ -956,26 +1257,63 @@ export default function ConversationPage() {
                   </div>
                   <span
                     className={`inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap text-[10px] font-bold px-2.5 py-1 rounded-full border ${
-                      openBanking
+                      samaLinked
                         ? "bg-safe-bg text-safe border-safe/20"
                         : "bg-warm-bg text-text-secondary border-border"
                     }`}
                   >
-                    <span className={`w-1.5 h-1.5 rounded-full ${openBanking ? "bg-safe animate-pulse" : "bg-text-secondary/50"}`} />
-                    {openBanking ? "الربط المباشر مفعّل" : "الربط المباشر غير مفعّل"}
+                    <span className={`w-1.5 h-1.5 rounded-full ${samaLinked ? "bg-safe animate-pulse" : "bg-text-secondary/50"}`} />
+                    {samaLinked ? "الربط المباشر مفعّل" : "الربط المباشر غير مفعّل"}
                   </span>
                 </div>
 
                 <p className="text-[11px] text-text-secondary leading-relaxed pt-2.5 border-t border-border/60">
-                  {openBanking
-                    ? "سيتم استيراد بياناتك المالية رسمياً عبر الربط المباشر الموحد (ساما)."
-                    : "الربط المباشر مع الجهات المالية غير مفعّل بعد، لذلك نعتمد على البيانات التي تدخلها بنفسك."}
+                  {dataMethod === "upload"
+                    ? "أوقفنا الربط المباشر لهذا التحليل — نعتمد على التقرير الذي رفعته بنفسك."
+                    : samaLinked
+                      ? "سيتم استيراد بياناتك المالية رسمياً عبر الربط المباشر الموحد (ساما)."
+                      : "الربط المباشر مع الجهات المالية غير مفعّل بعد، لذلك نعتمد على البيانات التي تدخلها بنفسك."}
                 </p>
               </div>
 
-              {/* SIMAH credit verification — built and wired, gated behind `simah_credit`.
-                  Visible but disabled ("قريباً") until SAMA licensing + SIMAH membership land;
-                  the same flag flips it live. Never faked. */}
+              {/* التأمينات الاجتماعية (GOSI) — authoritative for salary, service years and
+                  allowances. ON for a Nafath run, OFF for an upload run (data is from the PDF). */}
+              <div className="bg-white border border-border/70 rounded-[20px] p-4 mb-4 shadow-[0_6px_20px_-8px_rgba(8,47,62,0.18)]">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-7 h-7 rounded-full bg-navy/5 text-navy flex items-center justify-center shrink-0" aria-hidden="true">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="7" width="20" height="14" rx="2" />
+                        <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+                      </svg>
+                    </span>
+                    <span className="text-xs font-bold text-navy truncate">التأمينات الاجتماعية</span>
+                  </div>
+                  <span
+                    className={`inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+                      gosiLinked
+                        ? "bg-safe-bg text-safe border-safe/25"
+                        : dataMethod === "upload"
+                          ? "bg-warm-bg text-text-secondary border-border"
+                          : "bg-purple-light/50 text-purple border-purple/25"
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${gosiLinked ? "bg-safe animate-pulse" : dataMethod === "upload" ? "bg-text-secondary/50" : "bg-purple/70"}`} />
+                    {gosiLinked ? "مفعّل" : dataMethod === "upload" ? "غير مفعّل" : "قريباً"}
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-text-secondary leading-relaxed pt-2.5 border-t border-border/60">
+                  {gosiLinked
+                    ? "التأمينات الاجتماعية مسؤولة عن راتبك وعدد سنوات خدمتك وبدلاتك — تصلنا موثّقة من سجلك الوظيفي."
+                    : dataMethod === "upload"
+                      ? "تم إيقاف الربط مع التأمينات الاجتماعية لهذا التحليل — راتبك مستخرج من الملف المرفق دون توثيق."
+                      : "سيتيح ربط التأمينات توثيق راتبك وسنوات خدمتك وبدلاتك تلقائياً."}
+                </p>
+              </div>
+
+              {/* سمة (SIMAH) — authoritative for obligations and the credit score.
+                  ON for a Nafath run, OFF for an upload run (no bureau badge on those figures). */}
               <div className="bg-white border border-border/70 rounded-[20px] p-4 mb-4 shadow-[0_6px_20px_-8px_rgba(8,47,62,0.18)]">
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2 min-w-0">
@@ -989,39 +1327,47 @@ export default function ConversationPage() {
                   </div>
                   <span
                     className={`inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap text-[10px] font-bold px-2.5 py-1 rounded-full border ${
-                      simahEnabled
+                      simahLinked
                         ? "bg-safe-bg text-safe border-safe/25"
-                        : "bg-purple-light/50 text-purple border-purple/25"
+                        : dataMethod === "upload"
+                          ? "bg-warm-bg text-text-secondary border-border"
+                          : "bg-purple-light/50 text-purple border-purple/25"
                     }`}
                   >
-                    <span className={`w-1.5 h-1.5 rounded-full ${simahEnabled ? "bg-safe animate-pulse" : "bg-purple/70"}`} />
-                    {simahEnabled ? "مفعّل" : "قريباً"}
+                    <span className={`w-1.5 h-1.5 rounded-full ${simahLinked ? "bg-safe animate-pulse" : dataMethod === "upload" ? "bg-text-secondary/50" : "bg-purple/70"}`} />
+                    {simahLinked ? "مفعّل" : dataMethod === "upload" ? "غير مفعّل" : "قريباً"}
                   </span>
                 </div>
 
                 <p className="text-[11px] text-text-secondary leading-relaxed pt-2.5 border-t border-border/60">
-                  {simahEnabled
-                    ? "سنجلب راتبك والتزاماتك موثّقة من سمة بدلاً من الإدخال اليدوي."
-                    : "سيتيح ربط سمة توثيق راتبك والتزاماتك تلقائياً. الميزة مبنية وجاهزة، وتُفعَّل عند اكتمال الترخيص."}
+                  {simahLinked
+                    ? "سمة مسؤولة عن التزاماتك الشهرية ودرجتك الائتمانية — تصلنا موثّقة من تقريرك الائتماني."
+                    : dataMethod === "upload"
+                      ? "تم إيقاف الربط مع سمة لهذا التحليل — التزاماتك مستخرجة من الملف المرفق دون توثيق من سمة."
+                      : "سيتيح ربط سمة توثيق التزاماتك ودرجتك الائتمانية تلقائياً. الميزة مبنية وجاهزة، وتُفعَّل عند اكتمال الترخيص."}
                 </p>
 
                 <button
                   type="button"
-                  disabled={!simahEnabled}
-                  aria-disabled={!simahEnabled}
+                  disabled={!simahLinked}
+                  aria-disabled={!simahLinked}
                   className={`mt-3 w-full min-h-[40px] rounded-full text-xs font-bold border transition-colors ${
-                    simahEnabled
+                    simahLinked
                       ? "bg-navy text-white border-navy hover:bg-navy/90 cursor-pointer"
                       : "bg-warm-bg text-text-secondary border-border opacity-60 cursor-not-allowed"
                   }`}
                 >
-                  {simahEnabled ? "متصل بسمة" : "ربط سمة (قريباً)"}
+                  {simahLinked
+                    ? "متصل بسمة"
+                    : dataMethod === "upload"
+                      ? "الربط مع سمة متوقف"
+                      : "ربط سمة (قريباً)"}
                 </button>
               </div>
 
               <div className="space-y-2">
                 <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">
-                  بياناتك الموثّقة:
+                  {dataMethod === "upload" ? "بياناتك المستخرجة من الملف:" : "بياناتك الموثّقة:"}
                 </p>
 
                 <div className="space-y-1.5">
@@ -1065,7 +1411,7 @@ export default function ConversationPage() {
           </aside>
 
           {/* Chat */}
-          <div className="flex-1 flex flex-col min-w-0 bg-white rounded-[24px] border border-border/85 shadow-[0_15px_40px_rgba(8,47,62,0.08)] overflow-hidden animate-chat-panel chat-panel-delay-2">
+          <div className="flex-1 min-h-0 flex flex-col min-w-0 bg-white rounded-[24px] border border-border/85 shadow-[0_15px_40px_rgba(8,47,62,0.08)] overflow-hidden animate-chat-panel chat-panel-delay-2">
             <header className="flex items-center justify-between gap-4 border-b border-border/60 px-5 py-4 bg-white shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-navy flex items-center justify-center shrink-0">
@@ -1131,7 +1477,25 @@ export default function ConversationPage() {
                 accepted. Enum questions still only accept one of their options; typing a
                 label (or its value) works, and anything else is rejected with a message. */}
             <div className="border-t border-border/60 p-4 bg-white shrink-0 space-y-3">
-              {currentQ?.quickReplies && (
+              {/* The offer gate — the FIRST question. "Yes" opens the upload popup. */}
+              {stage === "gate" && (
+                <div className="flex flex-wrap gap-2 justify-end">
+                  <button
+                    onClick={() => answerOfferGate(true)}
+                    className="px-5 py-2.5 rounded-full text-xs font-semibold min-h-[44px] border border-navy bg-navy text-white hover:bg-navy/90 transition-colors cursor-pointer"
+                  >
+                    نعم، لديّ عرض من بنك
+                  </button>
+                  <button
+                    onClick={() => answerOfferGate(false)}
+                    className="px-5 py-2.5 rounded-full text-xs font-semibold min-h-[44px] border border-border/80 bg-warm-bg text-navy hover:border-navy/40 hover:bg-white transition-colors cursor-pointer"
+                  >
+                    لا، لا يوجد
+                  </button>
+                </div>
+              )}
+
+              {stage === "questions" && currentQ?.quickReplies && (
                 <div className="flex flex-wrap gap-2 justify-end">
                   {currentQ.quickReplies.map((opt) => {
                     const chosen = answers[currentQ.field] === opt.value;
@@ -1152,7 +1516,7 @@ export default function ConversationPage() {
                 </div>
               )}
 
-              <div className="flex gap-2 items-center">
+              {stage === "questions" && <div className="flex gap-2 items-center">
                 <button
                   onClick={handleSend}
                   disabled={!inputValue.trim()}
@@ -1196,10 +1560,10 @@ export default function ConversationPage() {
                     </svg>
                   </button>
                 </div>
-              </div>
+              </div>}
 
               {/* What this field will accept — shown, not discovered by being rejected. */}
-              {inputHint && (
+              {stage === "questions" && inputHint && (
                 <p className="text-[11px] text-text-secondary text-right px-1" style={{ fontVariantNumeric: "tabular-nums" }}>
                   {inputHint}
                 </p>
@@ -1208,6 +1572,86 @@ export default function ConversationPage() {
           </div>
         </div>
       )}
+
+      {/* The interrupting offer-upload popup — opens when the user answers the gate "yes".
+          Uses the same folder-upload component as the Nafath/SAMA gateway. */}
+      <AnimatePresence>
+        {offerModalOpen && (
+          <motion.div
+            key="offer-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-navy/40 backdrop-blur-sm p-4"
+            dir="rtl"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-md bg-white border border-border rounded-3xl p-7 shadow-xl relative text-center"
+            >
+              <button
+                onClick={skipOfferModal}
+                aria-label="تخطّي"
+                className="absolute top-5 left-5 p-2 rounded-full text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <h2 className="text-xl font-bold text-navy mb-1.5">ارفع عرض البنك</h2>
+              <p className="text-xs text-text-secondary leading-relaxed mb-5 px-2">
+                أرفق عرض التمويل الذي حصلت عليه بصيغة PDF لنستخرج نسبة الربح ونقارنه بالمرجع الاسترشادي.
+              </p>
+
+              {offerUploading ? (
+                <div className="flex flex-col items-center gap-3 py-6">
+                  <span className="w-10 h-10 border-2 border-[#00897B]/30 border-t-[#00897B] rounded-full animate-spin" />
+                  <p className="text-[11px] text-[#00897B] animate-pulse">جارٍ قراءة العرض واستخراج نسبة الربح...</p>
+                </div>
+              ) : (
+                <>
+                  <FolderInteraction onFileSelect={handleOfferUpload} />
+
+                  {/* The "both" fallback: type the profit rate instead of uploading. */}
+                  <div className="mt-6 pt-5 border-t border-border/60">
+                    <p className="text-[11px] font-semibold text-text-secondary mb-2 text-right">أو اكتب نسبة الربح السنوية يدوياً:</p>
+                    <div className="flex gap-2 items-center">
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={offerAprInput}
+                          onChange={(e) => setOfferAprInput(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleOfferTyped()}
+                          placeholder="مثال: 7.9"
+                          aria-label="نسبة ربح العرض"
+                          className="w-full bg-warm-bg border border-border/80 rounded-full ps-4 pe-9 py-3 text-base text-navy font-semibold placeholder:text-text-secondary/50 focus:outline-none focus:bg-white focus:border-navy/30 focus:ring-2 focus:ring-navy/5 min-h-[48px] text-right transition-all"
+                        />
+                        <span className="absolute start-4 top-1/2 -translate-y-1/2 text-text-secondary text-sm">%</span>
+                      </div>
+                      <button
+                        onClick={handleOfferTyped}
+                        disabled={!offerAprInput.trim()}
+                        className="bg-navy hover:bg-navy/90 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 rounded-full transition-colors min-h-[48px] text-sm font-semibold cursor-pointer shrink-0"
+                      >
+                        قارِن
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={skipOfferModal}
+                    className="mt-4 text-xs font-semibold text-text-secondary hover:text-navy underline transition-colors cursor-pointer"
+                  >
+                    تخطّي والمتابعة بدون عرض
+                  </button>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
