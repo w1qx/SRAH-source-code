@@ -81,10 +81,6 @@ const Navbar = () => {
     { label: 'تواصل معنا', href: '/#contact' },
   ];
 
-  if (authed) {
-    navLinks.push({ label: 'لوحة التحكم', href: '/dashboard' });
-  }
-
   return (
     <header className={`navbar-notch ${isScrolled ? 'navbar-notch--scrolled' : ''}`}>
       {/* Curved notch connectors */}
