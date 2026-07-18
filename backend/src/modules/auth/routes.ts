@@ -101,7 +101,7 @@ export function authRouter(deps: AuthRouterDeps): Router {
       if (authHeader?.startsWith('Bearer ')) {
         try {
           const token = authHeader.slice('Bearer '.length).trim();
-          const claims = tokens.verifyAccessToken(token);
+          const claims = service['tokens'].verifyAccessToken(token);
           authUserId = claims.sub;
         } catch {
           // ignore verification errors and fall back to fresh login
