@@ -13,6 +13,7 @@ import { authOf } from '@/modules/auth/middleware/auth-guard';
 import { askedQuestions } from './domain/questions';
 import type { Mailer } from '@/modules/auth/infrastructure/mailer';
 import type { AuthService } from '@/modules/auth/application/auth.service';
+import { ApiError } from '../../shared/http/api-error';
 import fs from 'fs';
 import path from 'path';
 
@@ -53,8 +54,6 @@ export function chatRouter(
     }),
   );
 
-import { ApiError } from '@/shared/http/api-error';
-
   /**
    * Send the SIMAH HTML report directly to the user's email.
    */
@@ -71,7 +70,7 @@ import { ApiError } from '@/shared/http/api-error';
       }
 
       if (!email || email.includes('@suraa.sa') || email.startsWith('nafath-')) {
-        throw new ApiError(400, 'email_required', 'الرجاء إدخال بريدك الإلكتروني لإرسال التقرير.');
+        throw new ApiError(400, 'validation_failed', 'الرجاء إدخال بريدك الإلكتروني لإرسال التقرير.');
       }
 
       // Try multiple paths to find the simah_report.html
