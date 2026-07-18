@@ -93,6 +93,33 @@ export function authRouter(deps: AuthRouterDeps): Router {
       if (!nationalId || nationalId.length !== 10) {
         throw new ApiError(400, 'validation_failed', 'Invalid National ID');
       }
+
+      // If user is already authenticated, associate this Nafath nationalId with their current account
+      // so their history is preserved and they are not logged into a dummy account.
+      let authUserId: string | null = null;
+      const authHeader = req.header('authorization');
+      if (authHeader?.startsWith('Bearer ')) {
+        try {
+          const token = authHeader.slice('Bearer '.length).trim();
+          const claims = tokens.verifyAccessToken(token);
+          authUserId = claims.sub;
+        } catch {
+          // ignore verification errors and fall back to fresh login
+        }
+      }
+
+      if (authUserId) {
+        const existingUser = await service['repository'].findUserById(authUserId);
+        if (existingUser) {
+          await service['repository'].updateUserNafathId(existingUser.id, nationalId);
+          const session = await service['issueSession'](existingUser.id, new Date(), req.header('user-agent'), req.ip);
+          const profile = await service.profile(existingUser.id);
+          setRefreshCookie(res, session, isProduction);
+          res.status(200).json({ session, profile, isNewUser: false });
+          return;
+        }
+      }
+
       const email = `nafath-${nationalId}@suraa.sa`;
       // Create user if not exists
       let user = await service['repository'].findUserByEmail(email);

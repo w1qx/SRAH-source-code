@@ -13,9 +13,15 @@ export const LoginPage = ({
   onLoginSuccess,
   onNafathModalToggle,
 }) => {
+  // DEV ONLY: a fixed OTP the backend also accepts (its DEV_OTP_CODE), so login can be
+  // exercised without reading the emailed code off the terminal. Empty in production builds
+  // (the var is simply unset), which restores the normal blank inputs.
+  const DEV_OTP = (process.env.NEXT_PUBLIC_DEV_OTP ?? '').slice(0, 6);
+  const otpFromDev = () => Array.from({ length: 6 }, (_, i) => DEV_OTP[i] ?? '');
+
   const [step, setStep] = useState('email'); // 'email' or 'otp'
   const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [otp, setOtp] = useState(otpFromDev);
   const [loading, setLoading] = useState(false);
   const [pdplConsent, setPdplConsent] = useState(false);
 
@@ -136,6 +142,9 @@ export const LoginPage = ({
       // Verifying IS the signup: there is no separate register endpoint, which is why the
       // PDPL consent has to ride along on the first-ever verify.
       const { profile, isNewUser } = await verifyOtp(email.trim().toLowerCase(), otpCode, pdplConsent);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem("suraa_user_email", email.trim().toLowerCase());
+      }
       toast.success(isNewUser ? "تم إنشاء حسابك" : "تم تسجيل الدخول", `مرحباً بك، ${profile.email}`);
       onLoginSuccess?.(profile, isNewUser);
     } catch (err) {
@@ -346,6 +355,12 @@ export const LoginPage = ({
                     />
                   ))}
                 </div>
+
+                {DEV_OTP && (
+                  <p className="text-[11px] text-center text-[#00897B] -mt-2">
+                    وضع التطوير: تم تعبئة الرمز <span className="font-bold tracking-widest">{DEV_OTP}</span> تلقائياً — وافق على الإقرار ثم أكِّد.
+                  </p>
+                )}
 
                 <label className="flex items-start gap-2.5 text-right cursor-pointer">
                   <input

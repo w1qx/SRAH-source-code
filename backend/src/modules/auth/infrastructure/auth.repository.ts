@@ -33,6 +33,7 @@ export interface AuthRepository {
   markEmailVerified(userId: string, at: Date): Promise<void>;
   recordPdplConsent(userId: string, at: Date): Promise<void>;
   deleteUser(userId: string): Promise<void>;
+  updateUserNafathId(userId: string, nafathId: string): Promise<void>;
 
   createOtp(params: { userId: string; codeHash: string; expiresAt: Date }): Promise<OtpRecordRow>;
   findLatestActiveOtp(userId: string): Promise<OtpRecordRow | undefined>;
@@ -82,6 +83,10 @@ export class PrismaAuthRepository implements AuthRepository {
   /** PDPL right-to-erasure. Everything user-linked cascades from this row (Scope §11.2). */
   async deleteUser(userId: string): Promise<void> {
     await this.db.user.delete({ where: { id: userId } });
+  }
+
+  async updateUserNafathId(userId: string, nafathId: string): Promise<void> {
+    await this.db.user.update({ where: { id: userId }, data: { nafathId } });
   }
 
   async createOtp(params: {

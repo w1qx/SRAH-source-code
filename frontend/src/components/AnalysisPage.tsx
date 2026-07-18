@@ -830,33 +830,8 @@ export default function AnalysisPage() {
                   toast.success("تم إرسال تقرير سمة بنجاح إلى البريد الإلكتروني: " + res.email);
                 }
               } catch (err: any) {
-                if (err instanceof ApiError && err.status === 400 && err.message.includes('إدخال')) {
-                  const userEmail = window.prompt("الرجاء إدخال بريدك الإلكتروني لتلقي تقرير سمة الائتماني الموحد:");
-                  if (userEmail && userEmail.trim()) {
-                    try {
-                      const res = await emailReport(userEmail.trim());
-                      toast.success("تم إرسال تقرير سمة بنجاح إلى البريد الإلكتروني: " + res.email);
-                      if (typeof window !== 'undefined') {
-                        window.localStorage.setItem("suraa_user_email", res.email);
-                      }
-                    } catch (e: any) {
-                      toast.error("فشل إرسال التقرير: " + (e.message || "حدث خطأ غير متوقع"));
-                    }
-                  }
-                } else {
-                  const userEmail = window.prompt("الرجاء إدخال بريدك الإلكتروني لتلقي تقرير سمة الائتماني الموحد:");
-                  if (userEmail && userEmail.trim()) {
-                    try {
-                      const res = await emailReport(userEmail.trim());
-                      toast.success("تم إرسال تقرير سمة بنجاح إلى البريد الإلكتروني: " + res.email);
-                      if (typeof window !== 'undefined') {
-                        window.localStorage.setItem("suraa_user_email", res.email);
-                      }
-                    } catch (e: any) {
-                      toast.error("فشل إرسال التقرير: " + (e.message || "حدث خطأ غير متوقع"));
-                    }
-                  }
-                }
+                console.error("Failed to email report automatically:", err);
+                toast.error("فشل إرسال التقرير تلقائياً: " + (err.message || "حدث خطأ غير متوقع"));
               }
             }}
             className="flex-1 bg-orange hover:bg-orange-hover text-white font-semibold py-4 rounded-full text-base transition-colors min-h-[52px] cursor-pointer shadow-sm"
