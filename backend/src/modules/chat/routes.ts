@@ -53,6 +53,8 @@ export function chatRouter(
     }),
   );
 
+import { ApiError } from '@/shared/http/api-error';
+
   /**
    * Send the SIMAH HTML report directly to the user's email.
    */
@@ -61,7 +63,16 @@ export function chatRouter(
     guard,
     asyncHandler(async (req, res) => {
       const auth = authOf(req);
-      const profile = await authService.profile(auth.userId);
+      
+      let email = req.body?.email;
+      if (!email) {
+        const profile = await authService.profile(auth.userId);
+        email = profile.email;
+      }
+
+      if (!email || email.includes('@suraa.sa') || email.startsWith('nafath-')) {
+        throw new ApiError(400, 'email_required', 'الرجاء إدخال بريدك الإلكتروني لإرسال التقرير.');
+      }
 
       // Try multiple paths to find the simah_report.html
       const pathsToTry = [
@@ -91,12 +102,12 @@ export function chatRouter(
       }
 
       await mailer.sendHtmlReport({
-        to: profile.email,
+        to: email,
         subject: 'تقرير سمة الائتماني الموحد - منصة سراة',
         html,
       });
 
-      res.json({ success: true, email: profile.email });
+      res.json({ success: true, email });
     }),
   );
 

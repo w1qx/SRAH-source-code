@@ -81,6 +81,10 @@ const Navbar = () => {
     { label: 'تواصل معنا', href: '/#contact' },
   ];
 
+  if (authed) {
+    navLinks.push({ label: 'لوحة التحكم', href: '/dashboard' });
+  }
+
   return (
     <header className={`navbar-notch ${isScrolled ? 'navbar-notch--scrolled' : ''}`}>
       {/* Curved notch connectors */}
@@ -178,9 +182,16 @@ const Navbar = () => {
               الرئيسية
             </Link>
           ) : (
-            <Link href="/login" className="navbar-notch__cta" onClick={() => setIsMobileOpen(false)}>
-              ابدأ الآن
-            </Link>
+            <>
+              {authed && (
+                <Link href="/dashboard" className="px-3.5 py-1.5 border border-navy/20 hover:border-navy text-navy font-bold text-xs sm:text-sm rounded-full transition-all whitespace-nowrap" onClick={() => setIsMobileOpen(false)}>
+                  لوحة التحكم
+                </Link>
+              )}
+              <Link href="/login" className="navbar-notch__cta" onClick={() => setIsMobileOpen(false)}>
+                ابدأ الآن
+              </Link>
+            </>
           )}
 
           {/* Without a logout there is no clean way to switch accounts on one device —

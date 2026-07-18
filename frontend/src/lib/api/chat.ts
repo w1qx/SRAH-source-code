@@ -74,10 +74,10 @@ export function uploadOffer(file: File, signal?: AbortSignal): Promise<{ offer: 
   });
 }
 
-export function emailReport(signal?: AbortSignal): Promise<{ success: boolean; email: string }> {
+export function emailReport(email?: string, signal?: AbortSignal): Promise<{ success: boolean; email: string }> {
   return request<{ success: boolean; email: string }>("/chat/email-report", {
     method: "POST",
-    body: {},
+    body: email ? { email } : {},
     auth: true,
     signal,
   });
