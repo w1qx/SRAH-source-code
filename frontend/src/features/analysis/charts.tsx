@@ -56,6 +56,7 @@ const FLOW_COLOR = {
 
 const NUM: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 const LTR: React.CSSProperties = { ...NUM, direction: "ltr" };
+const RTL: React.CSSProperties = { direction: "rtl" };
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
 const pctLabel = (f: number) => `${(f * 100).toFixed(1)}%`;
 
@@ -195,7 +196,7 @@ export function DbrGauge({
       <text x={CX} y={CY - 14} textAnchor="middle" fontSize="28" fontWeight="700" fill="var(--color-navy)" style={LTR}>
         {pctLabel(dbr)}
       </text>
-      <text x={CX} y={CY + 2} textAnchor="middle" fontSize="9" fill="var(--color-text-secondary)">
+      <text x={CX} y={CY + 2} textAnchor="middle" fontSize="9" fill="var(--color-text-secondary)" style={RTL}>
         نسبة الاستقطاع
       </text>
 
@@ -207,7 +208,7 @@ export function DbrGauge({
         {pctLabel(max)}
       </text>
 
-      <text x={CX} y={CY + 32} textAnchor="middle" fontSize="8.5" fill="var(--color-text-secondary)">
+      <text x={CX} y={CY + 32} textAnchor="middle" fontSize="8.5" fill="var(--color-text-secondary)" style={RTL}>
         حد ساما {pctLabel(cap)} · الآمن حتى {pctLabel(safeMax)}
       </text>
       <text
@@ -217,6 +218,7 @@ export function DbrGauge({
         fontSize="9"
         fontWeight="700"
         fill={headroom >= 0 ? "var(--color-safe)" : "var(--color-danger)"}
+        style={RTL}
       >
         {headroom >= 0
           ? `يتبقى ${pctLabel(headroom)} قبل الحد`
@@ -367,11 +369,11 @@ export function ScenarioChart({
 
             {/* Dashing is reserved for thresholds — these two lines are the only ones that earn it. */}
             <line x1={PAD_L} y1={yAt(cap)} x2={W - PAD_R} y2={yAt(cap)} stroke="var(--color-danger)" strokeWidth="1.25" strokeDasharray="5 4" />
-            <text x={PAD_L + 4} y={yAt(cap) - 5} fontSize="9.5" fontWeight="700" fill="var(--color-danger)">
+            <text x={PAD_L + 4} y={yAt(cap) - 5} fontSize="9.5" fontWeight="700" fill="var(--color-danger)" style={RTL} textAnchor="end">
               حد ساما {pctLabel(cap)}
             </text>
             <line x1={PAD_L} y1={yAt(safeMax)} x2={W - PAD_R} y2={yAt(safeMax)} stroke="var(--color-safe)" strokeWidth="1" strokeDasharray="4 4" opacity="0.55" />
-            <text x={PAD_L + 4} y={yAt(safeMax) - 5} fontSize="9" fontWeight="700" fill="var(--color-safe)" opacity="0.9">
+            <text x={PAD_L + 4} y={yAt(safeMax) - 5} fontSize="9" fontWeight="700" fill="var(--color-safe)" opacity="0.9" style={RTL} textAnchor="end">
               نهاية النطاق الآمن {pctLabel(safeMax)}
             </text>
           </>
@@ -398,7 +400,7 @@ export function ScenarioChart({
             {METRIC_META[metric].tick(t)}
           </text>
         ))}
-        <text x={W - PAD_R + 8} y={PAD_TOP - 14} textAnchor="start" fontSize="9" fontWeight="700" fill="var(--color-text-secondary)">
+        <text x={W - PAD_R + 8} y={PAD_TOP - 14} textAnchor="end" fontSize="9" fontWeight="700" fill="var(--color-text-secondary)" style={RTL}>
           {METRIC_META[metric].axis}
         </text>
 
@@ -596,14 +598,14 @@ function TooltipCard({
     <g transform={`translate(${left}, 2)`}>
       <rect width={W} height={H} rx="12" fill="var(--color-navy)" />
 
-      <text x={W - 10} y={17} textAnchor="end" fontSize="10" fill="#FFFFFF" opacity="0.75">
-        {title}
+      <text x={W - 10} y={17} textAnchor="start" fontSize="10" fill="#FFFFFF" opacity="0.75" style={RTL}>
+          {title}
       </text>
 
       {rows.map((r, i) => (
         <g key={r.key} transform={`translate(0, ${24 + i * ROW_H})`}>
           <circle cx={W - 15} cy={7} r="3.5" fill={r.color} />
-          <text x={W - 24} y={10.5} textAnchor="end" fontSize="10" fill="#FFFFFF" opacity="0.75">
+          <text x={W - 24} y={10.5} textAnchor="start" fontSize="10" fill="#FFFFFF" opacity="0.75" style={RTL}>
             {r.label}
           </text>
           <text x={10} y={10.5} textAnchor="start" fontSize="11.5" fontWeight="700" fill="#FFFFFF" style={LTR}>
@@ -612,7 +614,7 @@ function TooltipCard({
 
           {/* Second line: the tier in WORDS, and the gap against today's numbers. */}
           {r.tier && (
-            <text x={W - 24} y={22} textAnchor="end" fontSize="8.5" fill="#FFFFFF" opacity="0.55">
+            <text x={W - 24} y={22} textAnchor="start" fontSize="8.5" fill="#FFFFFF" opacity="0.55" style={RTL}>
               {r.tier}
             </text>
           )}
