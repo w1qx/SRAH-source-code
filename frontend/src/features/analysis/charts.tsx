@@ -56,7 +56,7 @@ const FLOW_COLOR = {
 
 const NUM: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 const LTR: React.CSSProperties = { ...NUM, direction: "ltr" };
-const RTL: React.CSSProperties = { direction: "rtl" };
+const RTL: React.CSSProperties = { direction: "rtl", unicodeBidi: "embed" };
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
 const pctLabel = (f: number) => `${(f * 100).toFixed(1)}%`;
 
