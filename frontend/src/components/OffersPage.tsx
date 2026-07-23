@@ -1,13 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useAppStore, completeInput } from "@/store/useAppStore";
 import { getOffers } from "@/lib/api/offers";
+import AssistantPanel from "@/components/AssistantPanel";
 import { runAnalysis } from "@/lib/api/analysis";
 import { ApiError } from "@/lib/api/client";
 import StatusBadge from "./StatusBadge";
 import { PageBackdrop } from "@/components/ui/page-backdrop";
-import type { FinancingOffer, OfferCategory, RiskTier } from "@shared/types";
+import { Logo } from "@/components/ui/logo";
+import type { BankApplication, FinancingOffer, OfferCategory, RiskTier } from "@shared/types";
+
+/** A browser-safe unique id for a locally-recorded application. */
+function newId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return `app_${Date.now()}`;
+}
 
 const NUM: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
@@ -40,13 +50,16 @@ const SORT_OPTIONS = [
 ] as const;
 
 export default function OffersPage() {
-  const { answers, selectedOffer, setSelectedOffer, sortBy, setSortBy, setStep, setAnalysis } =
+  const router = useRouter();
+  const { answers, selectedOffer, setSelectedOffer, sortBy, setSortBy, setStep, setAnalysis, offer, analysis, addApplication } =
     useAppStore();
 
   const [offers, setOffers] = useState<FinancingOffer[] | null>(null);
   const [meta, setMeta] = useState<{ illustrative: boolean; disclaimer: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rerunningId, setRerunningId] = useState<string | null>(null);
+  /** The offer whose application is being submitted — drives the success animation + redirect. */
+  const [submitted, setSubmitted] = useState<FinancingOffer | null>(null);
 
   const input = useMemo(() => completeInput(answers), [answers]);
 
@@ -106,9 +119,48 @@ export default function OffersPage() {
     }
   };
 
+  /**
+   * Submit a financing request for the chosen offer: record it, play the success animation, then
+   * hand the user to their dashboard where the new request is waiting. The application is stored
+   * client-side (see the store) until a real submission endpoint exists.
+   */
+  const submitApplication = (chosen: FinancingOffer) => {
+    if (submitted) return; // a submission is already in flight
+    setSelectedOffer(chosen.id);
+    const application: BankApplication = {
+      id: newId(),
+      userId: "",
+      analysisId: analysis?.analysisId ?? "",
+      bankName: chosen.provider,
+      financingAmount: input?.financingAmount ?? answers.financingAmount ?? 0,
+      termYears: chosen.termYears,
+      monthlyInstallment: chosen.monthlyInstallment,
+      status: "pending",
+      submittedAt: new Date().toISOString(),
+      respondedAt: null,
+    };
+    addApplication(application);
+    setSubmitted(chosen);
+    // Let the animation land, then move to the dashboard so the request is there on arrival.
+    window.setTimeout(() => router.push("/dashboard"), 2000);
+  };
+
   return (
     <div className="flex-1 w-full relative bg-[#faf8f5]">
       <PageBackdrop animated={false} />
+
+      {/* Context-aware voice assistant — compares the offers on screen objectively. It reads the
+          client's data and the displayed offers fresh at ask-time; it never pushes a provider. */}
+      <AssistantPanel
+        page="offers"
+        getContext={() => ({
+          financials: input ?? answers,
+          offers: offers ?? null,
+          analysisInput: input ?? null,
+          heldOffer: offer ?? null,
+        })}
+      />
+
 
       <div className="relative z-10 max-w-[1000px] mx-auto w-full px-4 py-6 space-y-6">
         <header className="animate-fade-in-up">
@@ -142,6 +194,29 @@ export default function OffersPage() {
 
         {!input ? (
           <EmptyState onStart={() => setStep(1)} />
+        ) : !offer ? (
+          <div className="bg-white rounded-[15px] border border-dashed border-border p-8 text-center py-16 space-y-4 animate-fade-in-up">
+            <div className="mx-auto w-16 h-16 rounded-full bg-warm-bg flex items-center justify-center text-text-secondary">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="9" y1="15" x2="15" y2="15" />
+                <line x1="12" y1="12" x2="12" y2="18" />
+              </svg>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-base font-bold text-navy">لم يتم إرفاق أي ملف تمويلي</h3>
+              <p className="text-xs text-text-secondary leading-relaxed max-w-md mx-auto">
+                لم نجد أي عرض تمويلي مرفق في المحادثة. يرجى تصوير أو إرفاق ملف عرض التمويل الذي حصلت عليه في الشات أولاً، وسنقوم بمطابقته وتحليله لك هنا.
+              </p>
+            </div>
+            <button
+              onClick={() => router.push("/advisor")}
+              className="inline-flex items-center justify-center bg-orange hover:bg-orange-hover text-white font-semibold px-6 py-3 rounded-full text-sm transition-colors cursor-pointer"
+            >
+              الذهاب للمحادثة لإرفاق العرض
+            </button>
+          </div>
         ) : error ? (
           <div role="alert" className="rounded-[15px] border border-danger/30 bg-danger-bg p-6 text-center">
             <p className="text-sm font-semibold text-danger mb-1">تعذّر تحميل العروض</p>
@@ -186,9 +261,11 @@ export default function OffersPage() {
                   key={offer.id}
                   offer={offer}
                   selected={selectedOffer === offer.id}
-                  onSelect={() => setSelectedOffer(offer.id)}
                   onAnalyze={() => analyzeOnOffer(offer)}
+                  onSubmit={() => submitApplication(offer)}
                   analyzing={rerunningId === offer.id}
+                  submitting={submitted?.id === offer.id}
+                  disabled={submitted !== null}
                   salary={salary}
                   commitments={commitments}
                   expenses={expenses}
@@ -210,7 +287,81 @@ export default function OffersPage() {
           </>
         )}
       </div>
+
+      <AnimatePresence>
+        {submitted && <SubmittedOverlay offer={submitted} />}
+      </AnimatePresence>
     </div>
+  );
+}
+
+/**
+ * The "تم التقديم" moment: a full-cover scrim with a drawing checkmark, a short confirmation,
+ * and a hint that we're moving the user to their dashboard (where the request now lives).
+ */
+function SubmittedOverlay({ offer }: { offer: FinancingOffer }) {
+  const reduce = useReducedMotion();
+  return (
+    <motion.div
+      dir="rtl"
+      role="status"
+      aria-live="assertive"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-navy/45 backdrop-blur-sm p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <motion.div
+        className="w-full max-w-sm bg-white rounded-[24px] shadow-[0_30px_70px_rgba(8,47,62,0.28)] p-8 text-center"
+        initial={{ opacity: 0, scale: 0.94, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+        transition={reduce ? { duration: 0.15 } : { type: "spring", stiffness: 320, damping: 26 }}
+      >
+        <div className="relative mx-auto mb-5 h-20 w-20">
+          {!reduce && (
+            <motion.span
+              className="absolute inset-0 rounded-full bg-safe/15"
+              initial={{ scale: 0.6, opacity: 0.8 }}
+              animate={{ scale: 1.6, opacity: 0 }}
+              transition={{ duration: 1.1, repeat: Infinity, ease: "easeOut" }}
+              aria-hidden="true"
+            />
+          )}
+          <div className="relative h-20 w-20 rounded-full bg-safe-bg flex items-center justify-center">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-safe)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <motion.path
+                d="M5 13l4 4L19 7"
+                initial={{ pathLength: reduce ? 1 : 0 }}
+                animate={{ pathLength: 1 }}
+                transition={{ duration: reduce ? 0 : 0.5, delay: reduce ? 0 : 0.18, ease: "easeInOut" }}
+              />
+            </svg>
+          </div>
+        </div>
+
+        <h2 className="text-xl font-bold text-navy mb-1.5">تم تقديم طلبك بنجاح</h2>
+        <p className="text-sm text-text-secondary leading-relaxed">
+          أرسلنا طلب تمويلك إلى <span className="font-bold text-navy">{offer.provider}</span> بقسط
+          شهري {fmt(offer.monthlyInstallment)} ريال. حالته الآن «قيد المراجعة».
+        </p>
+
+        <div className="mt-6 flex items-center justify-center gap-2 text-xs font-semibold text-text-secondary">
+          <span className="flex items-center justify-center h-5 w-5 rounded-full bg-navy">
+            <Logo className="h-3.5 w-3.5 text-white" />
+          </span>
+          نحوّلك إلى لوحتك المالية…
+        </div>
+        <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-warm-bg">
+          <motion.div
+            className="h-full bg-orange"
+            initial={{ width: "0%" }}
+            animate={{ width: "100%" }}
+            transition={{ duration: 2, ease: "linear" }}
+          />
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -245,18 +396,22 @@ function Chip({ label, value }: { label: string; value: string }) {
 function OfferCard({
   offer,
   selected,
-  onSelect,
   onAnalyze,
+  onSubmit,
   analyzing,
+  submitting,
+  disabled,
   salary,
   commitments,
   expenses,
 }: {
   offer: FinancingOffer;
   selected: boolean;
-  onSelect: () => void;
   onAnalyze: () => void;
+  onSubmit: () => void;
   analyzing: boolean;
+  submitting: boolean;
+  disabled: boolean;
   salary: number;
   commitments: number;
   expenses: number;
@@ -303,19 +458,27 @@ function OfferCard({
         <div className="flex flex-col sm:flex-row gap-2">
           <button
             onClick={onAnalyze}
-            disabled={analyzing}
-            className="flex-1 min-h-[44px] px-4 rounded-full text-sm font-semibold bg-orange hover:bg-orange-hover disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors cursor-pointer"
+            disabled={analyzing || disabled}
+            className="flex-1 min-h-[44px] px-4 rounded-full text-sm font-semibold border border-navy/25 text-navy bg-white hover:bg-warm-bg disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
           >
             {analyzing ? "جارٍ إعادة الحساب…" : `حلّل وضعي على هامش ${apr(offer.apr)}`}
           </button>
           <button
-            onClick={onSelect}
-            aria-pressed={selected}
-            className={`min-h-[44px] px-5 rounded-full text-sm font-semibold transition-colors cursor-pointer ${
-              selected ? "bg-navy text-white" : "border border-border text-navy hover:bg-warm-bg"
-            }`}
+            onClick={onSubmit}
+            disabled={disabled}
+            aria-label={`قدّم طلب تمويل عبر ${offer.provider}`}
+            className="min-h-[44px] px-6 rounded-full text-sm font-bold bg-orange hover:bg-orange-hover text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer inline-flex items-center justify-center gap-2"
           >
-            {selected ? "العرض المختار" : "اختر"}
+            {submitting ? (
+              <>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="animate-spin" style={{ animationDuration: "0.9s" }} aria-hidden="true">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+                جارٍ التقديم…
+              </>
+            ) : (
+              "قدّم الطلب"
+            )}
           </button>
         </div>
       </article>
