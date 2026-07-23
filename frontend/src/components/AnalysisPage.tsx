@@ -848,7 +848,7 @@ export default function AnalysisPage() {
             }}
             className="flex-1 bg-orange hover:bg-orange-hover text-white font-semibold py-4 rounded-full text-base transition-colors min-h-[52px] cursor-pointer shadow-sm"
           >
-            اعرض العروض المناسبة
+            تقدم للعرض التمويلي
           </button>
           <button
             onClick={() => setStep(1)}
