@@ -196,6 +196,76 @@ function ComparisonMatrix({
 }
 
 /* ------------------------------------------------------------------ */
+/* Analysis Card Component                                             */
+/* ------------------------------------------------------------------ */
+
+function AnalysisCard({
+  analysis,
+  onOpen,
+}: {
+  analysis: AnalysisSummary;
+  onOpen: (a: AnalysisSummary) => void;
+}) {
+  const loan = loanBreakdown(analysis.financingAmount, 0, analysis.goal, analysis.termYears);
+
+  return (
+    <div
+      onClick={() => onOpen(analysis)}
+      className="h-full bg-white rounded-[15px] border border-border transition-all duration-200 hover:shadow-[0_1px_3px_rgba(8,47,62,0.06),0_14px_28px_-18px_rgba(8,47,62,0.28)] cursor-pointer group"
+    >
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="min-w-0">
+            <h3 className="font-bold text-navy text-base truncate group-hover:text-orange transition-colors">
+              {GOAL_LABEL[analysis.goal]}
+            </h3>
+            <p className="text-xs text-text-secondary mt-0.5">
+              حُسب في {formatDate(analysis.createdAt)}
+            </p>
+          </div>
+          <StatusBadge
+            status={RISK_STATUS[analysis.overallRisk]}
+            label={RISK_LABEL[analysis.overallRisk]}
+            size="sm"
+          />
+        </div>
+
+        <dl className="grid grid-cols-3 gap-3">
+          <div>
+            <dt className="text-[11px] text-text-secondary mb-0.5">مبلغ التمويل</dt>
+            <dd className="text-sm font-bold text-navy" style={NUM}>
+              {fmt(analysis.financingAmount)}{" "}
+              <span className="text-[10px] font-normal text-text-secondary">ر.س</span>
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] text-text-secondary mb-0.5">القسط الشهري</dt>
+            <dd className="text-sm font-bold text-navy" style={NUM}>
+              {fmt(Math.round(loan.installment))}{" "}
+              <span className="text-[10px] font-normal text-text-secondary">ر.س</span>
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] text-text-secondary mb-0.5">المدة</dt>
+            <dd className="text-sm font-bold text-navy" style={NUM}>
+              {analysis.termYears}{" "}
+              <span className="text-[10px] font-normal text-text-secondary">سنوات</span>
+            </dd>
+          </div>
+        </dl>
+
+        <p className="text-[11px] mt-4 pt-3 border-t border-border/60 text-orange font-semibold flex items-center gap-1">
+          عرض وتعديل السيناريو
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:-translate-x-0.5">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Section                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -204,22 +274,17 @@ export default function PastAnalysesSection({
   onOpen,
 }: {
   analyses: AnalysisSummary[];
-  /** Opens the quick-edit drawer for one scenario. */
   onOpen: (a: AnalysisSummary) => void;
 }) {
-  const shouldReduceMotion = useReducedMotion();
-  const [view, setView] = useState<View>("list");
-
   return (
     <section>
       <div className="flex flex-wrap items-end justify-between gap-3 mb-1">
         <div>
           <h2 className="text-base font-bold text-navy mb-1">تحليلاتك السابقة</h2>
           <p className="text-xs text-text-secondary">
-            كل تحليل محفوظ بافتراضاته — افتح أي سيناريو لتعديله مباشرة، أو قارن بينها جنباً إلى جنب.
+            التحليلات التي أجريتها مسبقاً لمختلف سيناريوهات التمويل وحالتها.
           </p>
         </div>
-        {analyses.length > 0 && <ViewSwitcher view={view} onChange={setView} />}
       </div>
       <div className="mb-4" />
 
@@ -237,67 +302,11 @@ export default function PastAnalysesSection({
           </Link>
         </div>
       ) : (
-        <AnimatePresence mode="wait" initial={false}>
-          {view === "list" ? (
-            <motion.ul
-              key="list"
-              className="bg-white rounded-[15px] border border-border overflow-hidden divide-y divide-border/60"
-              initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            >
-              {analyses.map((analysis) => (
-                <li key={analysis.id}>
-                  <button
-                    type="button"
-                    onClick={() => onOpen(analysis)}
-                    className={`group w-full text-start flex items-center gap-4 p-4 sm:px-5 border-s-[3px] ${RISK_RAIL[analysis.overallRisk]} transition-colors hover:bg-warm-bg/60 cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-navy`}
-                  >
-                    <span className="w-10 h-10 shrink-0 rounded-[15px] bg-purple-light text-purple flex items-center justify-center" aria-hidden="true">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="18" y1="20" x2="18" y2="10" />
-                        <line x1="12" y1="20" x2="12" y2="4" />
-                        <line x1="6" y1="20" x2="6" y2="14" />
-                      </svg>
-                    </span>
-
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-navy truncate">{GOAL_LABEL[analysis.goal]}</p>
-                      <p className="text-xs text-text-secondary mt-0.5" style={NUM}>
-                        {fmt(analysis.financingAmount)} ر.س · {analysis.termYears} سنوات ·{" "}
-                        {formatDate(analysis.createdAt)}
-                      </p>
-                    </div>
-
-                    <StatusBadge
-                      status={RISK_STATUS[analysis.overallRisk]}
-                      label={RISK_LABEL[analysis.overallRisk]}
-                      size="sm"
-                    />
-
-                    <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-text-secondary group-hover:text-navy transition-colors">
-                      عرض القرض
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:-translate-x-0.5" aria-hidden="true">
-                        <polyline points="15 18 9 12 15 6" />
-                      </svg>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </motion.ul>
-          ) : (
-            <motion.div
-              key="matrix"
-              initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <ComparisonMatrix analyses={analyses} onOpen={onOpen} />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in-up">
+          {analyses.map((analysis) => (
+            <AnalysisCard key={analysis.id} analysis={analysis} onOpen={onOpen} />
+          ))}
+        </div>
       )}
     </section>
   );

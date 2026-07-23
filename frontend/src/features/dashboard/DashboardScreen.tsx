@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AnimatePresence } from "framer-motion";
 import type { AnalysisSummary, DashboardData } from "@shared/types";
 import { getDashboard } from "@/lib/api/dashboard";
+import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/lib/toast";
 import type { SimulationPreview } from "./finance";
 import HealthGauge from "./HealthGauge";
-import ApplicationsSection from "./ApplicationsSection";
 import PastAnalysesSection from "./PastAnalysesSection";
 import ScenarioDrawer from "./ScenarioDrawer";
 
@@ -40,9 +41,31 @@ function DashboardSkeleton() {
 /* ------------------------------------------------------------------ */
 
 export default function DashboardScreen() {
+  const router = useRouter();
+  // Requests the user submitted from the offers page live in the store (the backend has no
+  // submission table yet and returns an empty list) — surface them alongside any server ones.
+  const submittedApplications = useAppStore((s) => s.applications);
   const [data, setData] = useState<DashboardData | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+
+  /** Start a fresh analysis of a bank offer: clean slate, then flip on offer mode. */
+  const startOfferAnalysis = () => {
+    const s = useAppStore.getState();
+    s.resetAll();
+    s.setOfferMode(true);
+    s.setHasBankOffer(true);
+    router.push("/advisor");
+  };
+
+  /** A plain new analysis must never inherit a previous run's offer mode. */
+  const clearOfferMode = () => {
+    const s = useAppStore.getState();
+    s.setOfferMode(false);
+    s.setHasBankOffer(null);
+    s.setOffer(null);
+    s.setOfferAnalysis(null);
+  };
 
   /**
    * Scenarios are lifted into LOCAL state (seeded from the fetch) so the drawer's
@@ -115,19 +138,33 @@ export default function DashboardScreen() {
         <div>
           <h1 className="text-2xl sm:text-[32px] leading-snug font-bold text-navy mb-2">لوحتك المالية</h1>
           <p className="text-text-secondary leading-relaxed max-w-xl">
-            وضعك المالي الحالي، وطلبات التمويل التي قدّمتها، وتحليلاتك السابقة — في مكان واحد.
+            وضعك المالي الحالي، وتحليلاتك السابقة لسيناريوهات التمويل — في مكان واحد.
           </p>
         </div>
-        <Link
-          href="/advisor"
-          className="inline-flex items-center justify-center gap-2 shrink-0 min-h-[48px] px-6 bg-orange hover:bg-orange-hover text-white font-semibold rounded-[15px] shadow-sm transition-all duration-200 hover:shadow-md active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          تحليل جديد
-        </Link>
+        <div className="flex flex-col sm:flex-row gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={startOfferAnalysis}
+            className="inline-flex items-center justify-center gap-2 min-h-[48px] px-6 bg-white border border-navy/20 text-navy font-semibold rounded-[15px] shadow-sm transition-all duration-200 hover:border-navy/40 hover:shadow-md active:scale-[0.99] cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            تحليل عرض من أحد البنوك
+          </button>
+          <Link
+            href="/advisor"
+            onClick={clearOfferMode}
+            className="inline-flex items-center justify-center gap-2 min-h-[48px] px-6 bg-orange hover:bg-orange-hover text-white font-semibold rounded-[15px] shadow-sm transition-all duration-200 hover:shadow-md active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            تحليل جديد
+          </Link>
+        </div>
       </header>
 
       {failed ? (
@@ -171,6 +208,7 @@ export default function DashboardScreen() {
                 </p>
                 <Link
                   href="/advisor"
+                  onClick={clearOfferMode}
                   className="inline-flex items-center gap-2 min-h-[44px] px-5 bg-orange hover:bg-orange-hover text-white text-sm font-semibold rounded-full transition-colors"
                 >
                   ابدأ تحليلاً جديداً
@@ -179,9 +217,6 @@ export default function DashboardScreen() {
             )}
           </div>
           <div className="animate-fade-in-up anim-delay-1">
-            <ApplicationsSection applications={data.applications} />
-          </div>
-          <div className="animate-fade-in-up anim-delay-2">
             <PastAnalysesSection analyses={scenarios} onOpen={openScenario} />
           </div>
         </div>
